@@ -73,6 +73,7 @@ struct oTATo_PromptApp: App {
                 .environmentObject(app)
                 .modelContainer(app.container)
                 .preferredColorScheme(colorScheme)
+                .applyAppAccent()
         }
         .menuBarExtraStyle(.window)
 
@@ -81,6 +82,7 @@ struct oTATo_PromptApp: App {
                 .environmentObject(app)
                 .modelContainer(app.container)
                 .preferredColorScheme(colorScheme)
+                .applyAppAccent()
         }
     }
 }
@@ -103,7 +105,7 @@ private struct RootWindowView: View {
             .environmentObject(app)
             .frame(minWidth: 900, minHeight: 620)
             .preferredColorScheme(colorScheme)
-            .tint(Color.accentColor)
+            .applyAppAccent()
             .onAppear {
                 app.openWindowAction = { openWindow(id: "main") }
                 app.start()

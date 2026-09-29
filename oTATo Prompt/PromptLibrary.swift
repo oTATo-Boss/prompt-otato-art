@@ -41,7 +41,11 @@ enum PromptLibrary {
         let finalTitle = try resolvedTitle(title, content: content)
         let names = try checkedTagNames(tagNames)
         try requireActiveFolder(folderID, in: context)
-        let prompt = Prompt(title: finalTitle, content: content, formatRaw: format.rawValue, folderID: folderID)
+        // Keep the format argument while existing callers transition to a single
+        // Markdown workflow. New records always use Markdown; older TXT records
+        // remain readable through the unchanged v1 model.
+        let prompt = Prompt(title: finalTitle, content: content,
+                            formatRaw: PromptFormat.markdown.rawValue, folderID: folderID)
         context.insert(prompt)
         try setTags(names, for: prompt, in: context, save: false)
         try context.save()

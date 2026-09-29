@@ -2,59 +2,6 @@ import CryptoKit
 import Foundation
 import SwiftData
 
-// MARK: - Variables
-
-enum PromptTemplate {
-    enum TemplateError: LocalizedError {
-        case missingValues([String])
-
-        var errorDescription: String? {
-            switch self {
-            case .missingValues(let names):
-                return "请填写变量：\(names.joined(separator: "、"))"
-            }
-        }
-    }
-
-    private static let pattern = try! NSRegularExpression(pattern: #"\{\{([^{}]*)\}\}"#)
-
-    /// Unique, nonempty names in first appearance order.
-    static func variables(in template: String) -> [String] {
-        let source = template as NSString
-        var seen = Set<String>()
-        var names: [String] = []
-        for match in pattern.matches(in: template, range: NSRange(location: 0, length: source.length)) {
-            let name = source.substring(with: match.range(at: 1))
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            if !name.isEmpty && seen.insert(name).inserted {
-                names.append(name)
-            }
-        }
-        return names
-    }
-
-    /// Produces clipboard text without changing the saved template. Empty
-    /// placeholders such as `{{ }}` remain literal text.
-    static func render(_ template: String, values: [String: String], allowEmpty: Bool = false) throws -> String {
-        let missing = variables(in: template).filter { name in
-            guard let value = values[name] else { return true }
-            return !allowEmpty && value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        }
-        guard missing.isEmpty else { throw TemplateError.missingValues(missing) }
-
-        let source = template as NSString
-        let output = NSMutableString(string: template)
-        let matches = pattern.matches(in: template, range: NSRange(location: 0, length: source.length))
-        for match in matches.reversed() {
-            let name = source.substring(with: match.range(at: 1))
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !name.isEmpty, let value = values[name] else { continue }
-            output.replaceCharacters(in: match.range, with: value)
-        }
-        return output as String
-    }
-}
-
 // MARK: - Markdown and TXT
 
 struct ImportedPromptText {
@@ -77,10 +24,8 @@ enum PromptTextTransfer {
     }
 
     static func read(_ url: URL) throws -> ImportedPromptText {
-        let format: PromptFormat
         switch url.pathExtension.lowercased() {
-        case "md": format = .markdown
-        case "txt": format = .txt
+        case "md", "txt": break
         default: throw TransferError.unsupportedFormat(url.lastPathComponent)
         }
         let access = url.startAccessingSecurityScopedResource()
@@ -94,7 +39,7 @@ enum PromptTextTransfer {
         return ImportedPromptText(
             title: title.isEmpty ? "未命名 Prompt" : String(title.prefix(100)),
             content: content,
-            format: format
+            format: .markdown
         )
     }
 
@@ -112,7 +57,7 @@ enum PromptTextTransfer {
         let files = try readAll(urls)
         let prompts = files.map {
             Prompt(title: $0.title, content: $0.content,
-                   formatRaw: $0.format.rawValue, folderID: folderID)
+                   formatRaw: PromptFormat.markdown.rawValue, folderID: folderID)
         }
         do {
             try context.transaction {
@@ -128,7 +73,7 @@ enum PromptTextTransfer {
 
     @discardableResult
     static func write(content: String, format: PromptFormat, to url: URL) throws -> URL {
-        let ext = format == .markdown ? "md" : "txt"
+        let ext = "md"
         let destination = url.pathExtension.lowercased() == ext
             ? url : url.deletingPathExtension().appendingPathExtension(ext)
         let access = url.startAccessingSecurityScopedResource()
@@ -170,7 +115,7 @@ enum PromptTextTransfer {
         do {
             for prompt in prompts {
                 let parent = try directoryFor(prompt.folderID)
-                let ext = prompt.formatRaw == "txt" ? "txt" : "md"
+                let ext = "md"
                 let stem = safeFileName(prompt.title)
                 var destination = parent.appendingPathComponent(stem).appendingPathExtension(ext)
                 var suffix = 2

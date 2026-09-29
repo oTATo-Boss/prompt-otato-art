@@ -53,8 +53,7 @@ private struct SidebarFolderNode: View {
                 .font(.system(size: 12.5))
                 .padding(.horizontal, 9).frame(height: 28)
                 .contentShape(Rectangle())
-                .background(selectedID == folder.id ? Color.accentColor.opacity(0.14) : .clear,
-                            in: RoundedRectangle(cornerRadius: 6))
+                .modifier(SubtleHoverSurface(selected: selectedID == folder.id))
             }
             .buttonStyle(.plain)
             .contextMenu {
@@ -80,7 +79,45 @@ private struct LibraryWidthKey: PreferenceKey {
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
 
+private struct SubtleHoverSurface: ViewModifier {
+    @Environment(\.appAccentStyle) private var accent
+    @State private var isHovering = false
+    let selected: Bool
+    var cornerRadius: CGFloat = 6
+
+    func body(content: Content) -> some View {
+        content
+            .background(selected ? accent.softSelection
+                        : isHovering ? Color.primary.opacity(0.055) : Color.clear,
+                        in: RoundedRectangle(cornerRadius: cornerRadius))
+            .onHover { isHovering = $0 }
+    }
+}
+
+private struct LibraryChip: View {
+    @Environment(\.appAccentStyle) private var accent
+    @State private var isHovering = false
+    let title: String
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 11, weight: selected ? .semibold : .regular))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 5)
+                .foregroundStyle(selected ? accent.selectedForeground : Color.primary)
+                .background(selected ? accent.selectedFill
+                            : Color.primary.opacity(isHovering ? 0.11 : 0.06), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+    }
+}
+
 struct ContentView: View {
+    @Environment(\.appAccentStyle) private var accent
     @Environment(\.modelContext) private var context
     @EnvironmentObject private var app: AppCoordinator
     @Query private var prompts: [Prompt]
@@ -90,6 +127,7 @@ struct ContentView: View {
     @AppStorage("library.viewMode") private var viewMode = "grid"
 
     @State private var collection: LibraryCollection = .all
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var selectedTagID: UUID?
     @State private var selectedPromptID: UUID?
     @State private var editingID: UUID?
@@ -111,6 +149,7 @@ struct ContentView: View {
     @State private var errorMessage: String?
     @State private var toast: String?
     @State private var libraryWidth: CGFloat = 900
+    @State private var pendingSearchFocus = false
     @FocusState private var searchFocused: Bool
     @FocusState private var libraryFocused: Bool
 
@@ -173,18 +212,20 @@ struct ContentView: View {
     }
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             sidebar.navigationSplitViewColumnWidth(min: 220, ideal: 240, max: 280)
         } detail: {
             Group {
                 if showingSettings {
-                    AppSettingsView()
+                    AppSettingsView(titlebarInset: detailHeaderInset)
                 } else if creating {
                     PromptCreateView(folders: activeFolders, initialFolderID: selectedFolderID,
+                                     titlebarInset: detailHeaderInset,
                                      onCreate: createPrompt, onCancel: { creating = false })
                 } else if let id = editingID,
                           let prompt = prompts.first(where: { $0.id == id && $0.deletedAt == nil }) {
                     PromptEditorView(prompt: prompt, folders: activeFolders,
+                                     titlebarInset: detailHeaderInset,
                                      onBack: { editingID = nil },
                                      onCopy: { app.requestCopy(prompt) },
                                      onExport: { export(prompt) },
@@ -195,7 +236,6 @@ struct ContentView: View {
                 }
             }
             .frame(minWidth: 650, minHeight: 580)
-            .ignoresSafeArea(.container, edges: .top)
         }
         .frame(minWidth: 900, minHeight: 620)
         .fileImporter(isPresented: $importing,
@@ -305,6 +345,10 @@ struct ContentView: View {
         }
     }
 
+    private var detailHeaderInset: CGFloat {
+        columnVisibility == .detailOnly ? 136 : 20
+    }
+
     private var sidebar: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
@@ -330,7 +374,11 @@ struct ContentView: View {
                             newFolderParent = selectedFolderID
                             newFolderName = ""
                             showNewFolder = true
-                        } label: { Image(systemName: "plus") }
+                        } label: {
+                            Image(systemName: "plus")
+                                .frame(width: 23, height: 23)
+                                .modifier(SubtleHoverSurface(selected: false))
+                        }
                         .buttonStyle(.plain).accessibilityLabel("新建文件夹")
                     }
                     .padding(.leading, 12).padding(.trailing, 15)
@@ -369,8 +417,7 @@ struct ContentView: View {
                 Label("设置", systemImage: "gearshape")
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 14).padding(.vertical, 10)
-                    .background(showingSettings ? Color.accentColor.opacity(0.14) : .clear,
-                                in: RoundedRectangle(cornerRadius: 6))
+                    .modifier(SubtleHoverSurface(selected: showingSettings))
             }
             .buttonStyle(.plain).accessibilityLabel("打开设置")
         }
@@ -389,9 +436,8 @@ struct ContentView: View {
             .font(.system(size: 12.5))
             .padding(.horizontal, 9).frame(height: 28)
             .contentShape(Rectangle())
-            .background(collection == target && !searching && !showingSettings
-                        ? Color.accentColor.opacity(0.14) : .clear,
-                        in: RoundedRectangle(cornerRadius: 6))
+            .modifier(SubtleHoverSurface(
+                selected: collection == target && !searching && !showingSettings))
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(title)，\(count) 个提示词")
@@ -443,6 +489,7 @@ struct ContentView: View {
                     }
                 }
                 .focusable().focused($libraryFocused)
+                .focusEffectDisabled()
                 .onKeyPress(.return) { openSelected(); return .handled }
                 .onKeyPress(.space) { copySelected(); return .handled }
                 .onKeyPress(.leftArrow) { moveSelection(-1); return .handled }
@@ -458,6 +505,13 @@ struct ContentView: View {
             }
         }
         .onPreferenceChange(LibraryWidthKey.self) { libraryWidth = $0 }
+        .onAppear {
+            // Keep the library keyboard-ready without giving the search field
+            // its prominent AppKit focus ring on every window opening.
+            DispatchQueue.main.async {
+                if !pendingSearchFocus && !searchFocused { libraryFocused = true }
+            }
+        }
         .overlay(alignment: .bottom) {
             if let toast {
                 Label(toast, systemImage: "checkmark.circle.fill")
@@ -547,7 +601,17 @@ struct ContentView: View {
             .fixedSize(horizontal: true, vertical: false)
             .accessibilityLabel("视图方式")
             TextField("搜索提示词、标签、内容…", text: $searchText)
-                .textFieldStyle(.roundedBorder).focused($searchFocused)
+                .textFieldStyle(.plain)
+                .focused($searchFocused)
+                .focusEffectDisabled()
+                .padding(.horizontal, 9)
+                .frame(height: 29)
+                .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 7))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 7)
+                        .strokeBorder(searchFocused ? accent.tint.opacity(0.34)
+                                      : Color.primary.opacity(0.10), lineWidth: 0.75)
+                }
                 .frame(minWidth: 160, idealWidth: 220, maxWidth: 280)
                 .accessibilityLabel("搜索提示词")
             Menu {
@@ -558,42 +622,31 @@ struct ContentView: View {
                 Button("导入 .md/.txt…") { importing = true }
                 Button("导出当前集合…") { exportCollection() }
             } label: { Image(systemName: "ellipsis") }
-                .menuStyle(.borderlessButton).frame(width: 25).accessibilityLabel("更多操作")
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .frame(width: 29, height: 29)
+                .modifier(SubtleHoverSurface(selected: false))
+                .accessibilityLabel("更多操作")
             Button(action: startCreate) { Image(systemName: "plus") }
-                .buttonStyle(.bordered).accessibilityLabel("新建 Prompt")
+                .buttonStyle(.plain)
+                .frame(width: 29, height: 29)
+                .modifier(SubtleHoverSurface(selected: false))
+                .accessibilityLabel("新建 Prompt")
         }
-        .padding(.horizontal, 20).frame(height: 76)
+        .padding(.leading, detailHeaderInset)
+        .padding(.trailing, 20)
+        .frame(height: 76)
     }
 
     private var tagStrip: some View {
-        HStack(spacing: 0) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 7) {
-                    chip("全部", selected: selectedTagID == nil) { selectedTagID = nil }
-                    ForEach(availableTags) { tag in
-                        chip(tag.name, selected: selectedTagID == tag.id) { selectedTagID = tag.id }
-                    }
-                }
-                .padding(.leading, 20).padding(.trailing, 8).padding(.vertical, 8)
-            }
-            Menu {
-                Button("全部") { selectedTagID = nil }
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 7) {
+                chip("全部", selected: selectedTagID == nil) { selectedTagID = nil }
                 ForEach(availableTags) { tag in
-                    Button(tag.name) { selectedTagID = tag.id }
+                    chip(tag.name, selected: selectedTagID == tag.id) { selectedTagID = tag.id }
                 }
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 11, weight: .medium))
-                    .frame(width: 24, height: 24)
-                    .background(Color.primary.opacity(0.06), in: Circle())
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .frame(width: 32, height: 40)
-            .padding(.leading, 8)
-            .padding(.trailing, 16)
-            .background(Color(nsColor: .windowBackgroundColor))
-            .accessibilityLabel("选择标签")
+            .padding(.horizontal, 20).padding(.vertical, 8)
         }
     }
 
@@ -611,13 +664,7 @@ struct ContentView: View {
     }
 
     private func chip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title).font(.system(size: 11, weight: selected ? .semibold : .regular))
-                .padding(.horizontal, 12).padding(.vertical, 5)
-                .foregroundStyle(selected ? Color.white : Color.primary)
-                .background(selected ? Color.accentColor : Color.primary.opacity(0.06), in: Capsule())
-        }
-        .buttonStyle(.plain)
+        LibraryChip(title: title, selected: selected, action: action)
     }
     private func scopeChip(_ title: String, _ scope: PromptSearch.Scope) -> some View {
         chip(title, selected: searchScope == scope) { searchScope = scope }
@@ -695,12 +742,17 @@ struct ContentView: View {
     }
     private func startCreate() {
         showingSettings = false; editingID = nil; selectedPromptID = nil; creating = true
+        searchFocused = false
     }
     private func focusSearch() {
+        pendingSearchFocus = true
         showingSettings = false
         editingID = nil
         creating = false
-        DispatchQueue.main.async { searchFocused = true }
+        DispatchQueue.main.async {
+            searchFocused = true
+            pendingSearchFocus = false
+        }
     }
     private func folderName(_ id: UUID?) -> String {
         guard let id else { return "未分类" }
@@ -715,11 +767,19 @@ struct ContentView: View {
         do {
             if let coverImage { stored = try PromptStorage.saveCoverAsset(image: coverImage) }
             let prompt = try PromptLibrary.createPrompt(in: context, title: title, content: content,
-                                                         format: format, folderID: folderID, tagNames: tagNames)
+                                                         format: .markdown, folderID: folderID, tagNames: tagNames)
             created = prompt
             if isFavorite { try PromptLibrary.setFavorite(true, for: prompt, in: context) }
-            if let stored { try PromptLibrary.setCover(stored, crop: crop, for: prompt, in: context) }
-            creating = false; editingID = prompt.id
+            if let stored { try PromptLibrary.setCover(stored, crop: .full, for: prompt, in: context) }
+            searchTask?.cancel()
+            searchText = ""
+            settledSearch = ""
+            selectedTagID = nil
+            collection = folderID.map(LibraryCollection.folder) ?? .all
+            sort = .updated
+            creating = false
+            editingID = nil
+            selectedPromptID = prompt.id
         } catch {
             if let created {
                 context.delete(created)
@@ -798,11 +858,11 @@ struct ContentView: View {
     }
     private func export(_ prompt: Prompt) {
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = "\(prompt.title.isEmpty ? "未命名 Prompt" : prompt.title).\(prompt.format.fileExtension)"
-        panel.allowedContentTypes = [UTType(filenameExtension: prompt.format.fileExtension) ?? .plainText]
+        panel.nameFieldStringValue = "\(prompt.title.isEmpty ? "未命名 Prompt" : prompt.title).md"
+        panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
         guard panel.runModal() == .OK, let url = panel.url else { return }
         perform {
-            _ = try PromptTextTransfer.write(content: prompt.content, format: prompt.format, to: url)
+            _ = try PromptTextTransfer.write(content: prompt.content, format: .markdown, to: url)
             showToast("已导出 Prompt")
         }
     }

@@ -6,6 +6,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct AppSettingsView: View {
+    let titlebarInset: CGFloat
     @EnvironmentObject private var app: AppCoordinator
     @Environment(\.modelContext) private var modelContext
     @Query private var prompts: [Prompt]
@@ -13,12 +14,12 @@ struct AppSettingsView: View {
     @Query private var tags: [Tag]
 
     @AppStorage("appearanceMode") private var appearanceMode = "system"
+    @AppStorage("accentPalette") private var accentPalette = AppAccentPalette.monochrome.rawValue
     @AppStorage("cardSize") private var cardSize = "standard"
-    @AppStorage("defaultPromptFormat") private var defaultPromptFormat = "markdown"
     @AppStorage("editorFontSize") private var editorFontSize = 16.0
     @AppStorage("editorWrapLines") private var editorWrapLines = true
-    @AppStorage("editorPreviewEnabled") private var editorPreviewEnabled = false
     @AppStorage("globalHotkeyDisplay") private var hotkeyDisplay = "⌥ Space"
+    @AppStorage("globalSearchDefaultCollection") private var globalSearchDefaultCollection = GlobalSearchDefaultCollection.favorites.rawValue
 
     @StateObject private var hotkeyRecorder = HotkeyRecorder()
     @State private var launchAtLogin = false
@@ -28,6 +29,10 @@ struct AppSettingsView: View {
     @State private var pendingRestoreURL: URL?
     @State private var pendingRestoreSummary: ArchiveSummary?
     @State private var showRestoreConfirmation = false
+
+    init(titlebarInset: CGFloat = 24) {
+        self.titlebarInset = titlebarInset
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -41,6 +46,7 @@ struct AppSettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                     .padding(.bottom, 4)
+                    .padding(.leading, max(0, titlebarInset - 24))
 
                     LazyVGrid(columns: gridColumns(for: geometry.size.width),
                               alignment: .leading, spacing: 14) {
@@ -173,7 +179,7 @@ struct AppSettingsView: View {
     }
 
     private var shortcutCard: some View {
-        settingsCard("快捷键", minHeight: 206) {
+        settingsCard("快捷键", minHeight: 250) {
             settingsRow("全局搜索", symbol: "magnifyingglass",
                         subtitle: "在任意应用中唤起搜索") {
                 Button(hotkeyRecorder.isRecording ? "请按快捷键…" : hotkeyDisplay) {
@@ -187,6 +193,17 @@ struct AppSettingsView: View {
                 .disabled(hotkeyRecorder.isRecording)
                 .accessibilityLabel("重新录入全局搜索快捷键，当前为 \(hotkeyDisplay)")
                 .help("录入时按 Esc 取消；请包含 Command、Option 或 Control。")
+            }
+            Divider().padding(.leading, 35)
+            settingsRow("浮层默认内容", symbol: "rectangle.on.rectangle",
+                        subtitle: "未输入关键词时显示") {
+                Picker("浮层默认内容", selection: $globalSearchDefaultCollection) {
+                    Text("收藏").tag(GlobalSearchDefaultCollection.favorites.rawValue)
+                    Text("最近使用").tag(GlobalSearchDefaultCollection.recentlyUsed.rawValue)
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .frame(width: 155)
             }
             Divider().padding(.leading, 35)
             settingsRow("复制 Prompt", symbol: "doc.on.doc",
@@ -243,6 +260,17 @@ struct AppSettingsView: View {
                 .frame(width: 208)
             }
             Divider().padding(.leading, 35)
+            settingsRow("高亮配色", symbol: "paintpalette",
+                        subtitle: "选中项、按钮和焦点颜色") {
+                Picker("高亮配色", selection: $accentPalette) {
+                    Text("黑白反色").tag(AppAccentPalette.monochrome.rawValue)
+                    Text("备忘录黄").tag(AppAccentPalette.notes.rawValue)
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .frame(width: 208)
+            }
+            Divider().padding(.leading, 35)
             settingsRow("卡片大小", symbol: "rectangle",
                         subtitle: "调整提示词卡片的显示密度") {
                 Picker("卡片尺寸", selection: $cardSize) {
@@ -258,18 +286,7 @@ struct AppSettingsView: View {
     }
 
     private var editorCard: some View {
-        settingsCard("编辑器", minHeight: 233) {
-            settingsRow("默认格式", symbol: "doc",
-                        subtitle: "新建提示词时的默认格式") {
-                Picker("默认格式", selection: $defaultPromptFormat) {
-                    Text("Markdown").tag("markdown")
-                    Text("纯文本").tag("txt")
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .frame(width: 122)
-            }
-            Divider().padding(.leading, 35)
+        settingsCard("编辑器", minHeight: 150) {
             settingsRow("字体大小", symbol: "textformat.size",
                         subtitle: "编辑器内的字体大小") {
                 HStack(spacing: 7) {
@@ -286,13 +303,6 @@ struct AppSettingsView: View {
             settingsRow("自动换行", symbol: "text.word.spacing",
                         subtitle: "编辑器中默认开启自动换行") {
                 Toggle("自动换行", isOn: $editorWrapLines)
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-            }
-            Divider().padding(.leading, 35)
-            settingsRow("Markdown 预览", symbol: "eye",
-                        subtitle: "在编辑时显示预览渲染效果") {
-                Toggle("默认显示 Markdown 预览", isOn: $editorPreviewEnabled)
                     .labelsHidden()
                     .toggleStyle(.switch)
             }

@@ -26,7 +26,9 @@ enum PromptPresentation {
     static func croppedImage(for prompt: Prompt) -> NSImage? {
         guard let path = prompt.coverPath,
               let source = PromptStorage.loadCover(at: path) else { return nil }
-        return crop(source, to: prompt.coverCrop)
+        // Older libraries retain crop metadata for archive compatibility. The
+        // presentation always uses the complete source image now.
+        return source
     }
 
     static func crop(_ image: NSImage, to crop: CoverCrop) -> NSImage {
@@ -42,6 +44,7 @@ enum PromptPresentation {
 }
 
 struct PromptCardView: View {
+    @State private var isHovering = false
     let prompt: Prompt
     let selected: Bool
     let onSelect: () -> Void
@@ -54,7 +57,7 @@ struct PromptCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             media
-                .aspectRatio(16 / 10, contentMode: .fit)
+                .aspectRatio(16.0 / 9.0, contentMode: .fit)
                 .clipped()
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
@@ -86,14 +89,22 @@ struct PromptCardView: View {
             }
             .padding(.horizontal, 9).padding(.vertical, 11)
         }
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
+        .background {
+            RoundedRectangle(cornerRadius: 7)
+                .fill(Color(nsColor: .controlBackgroundColor))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 7)
+                        .fill(Color.primary.opacity(isHovering || selected ? 0.045 : 0))
+                }
+        }
         .clipShape(RoundedRectangle(cornerRadius: 7))
         .overlay {
             RoundedRectangle(cornerRadius: 7)
-                .strokeBorder(selected ? Color.accentColor : Color(nsColor: .separatorColor).opacity(0.6),
-                              lineWidth: selected ? 2 : 0.5)
+                .strokeBorder(Color(nsColor: .separatorColor).opacity(isHovering || selected ? 0.75 : 0.45),
+                              lineWidth: 0.5)
         }
         .contentShape(RoundedRectangle(cornerRadius: 7))
+        .onHover { isHovering = $0 }
         .onTapGesture(count: 2, perform: onOpen)
         .onTapGesture(perform: onSelect)
         .accessibilityElement(children: .contain)
@@ -104,9 +115,8 @@ struct PromptCardView: View {
         GeometryReader { geometry in
             ZStack(alignment: .top) {
                 if let image {
-                    Image(nsImage: image).resizable().scaledToFill()
+                    Image(nsImage: image).resizable().scaledToFit()
                         .frame(width: geometry.size.width, height: geometry.size.height)
-                        .clipped()
                 } else {
                     Rectangle().fill(Color(red: 0.10, green: 0.11, blue: 0.12))
                     Text(PromptPresentation.preview(prompt.content).isEmpty
@@ -143,14 +153,31 @@ struct PromptCardView: View {
 
 private struct MediaButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .frame(width: 23, height: 23)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 5))
-            .opacity(configuration.isPressed ? 0.7 : 1)
+        HoverableMediaButton(configuration: configuration)
+    }
+
+    private struct HoverableMediaButton: View {
+        let configuration: ButtonStyle.Configuration
+        @State private var isHovering = false
+
+        var body: some View {
+            configuration.label
+                .frame(width: 23, height: 23)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 5))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(Color.primary.opacity(isHovering ? 0.10 : 0))
+                        .allowsHitTesting(false)
+                }
+                .opacity(configuration.isPressed ? 0.7 : 1)
+                .onHover { isHovering = $0 }
+        }
     }
 }
 
 struct PromptListRow: View {
+    @Environment(\.appAccentStyle) private var accent
+    @State private var isHovering = false
     let prompt: Prompt
     let folderName: String
     let selected: Bool
@@ -163,15 +190,16 @@ struct PromptListRow: View {
         HStack(spacing: 12) {
             Group {
                 if let image = PromptPresentation.croppedImage(for: prompt) {
-                    Image(nsImage: image).resizable().scaledToFill()
+                    Image(nsImage: image).resizable().scaledToFit()
                 } else {
-                    Image(systemName: prompt.format == .markdown ? "doc.richtext" : "doc.text")
+                    Image(systemName: "doc.richtext")
                         .font(.system(size: 20)).foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(Color(nsColor: .textBackgroundColor))
                 }
             }
-            .frame(width: 72, height: 47).clipped()
+            .frame(width: 80, height: 45)
+            .background(Color(nsColor: .textBackgroundColor))
             .clipShape(RoundedRectangle(cornerRadius: 5))
             VStack(alignment: .leading, spacing: 4) {
                 Text(prompt.title.isEmpty ? "未命名 Prompt" : prompt.title)
@@ -195,9 +223,10 @@ struct PromptListRow: View {
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 10).frame(height: 65)
-        .background(selected ? Color.accentColor.opacity(0.13) : Color.clear,
+        .background(selected ? accent.softSelection : isHovering ? Color.primary.opacity(0.045) : Color.clear,
                     in: RoundedRectangle(cornerRadius: 6))
         .contentShape(Rectangle())
+        .onHover { isHovering = $0 }
         .onTapGesture(count: 2, perform: onOpen)
         .onTapGesture(perform: onSelect)
     }

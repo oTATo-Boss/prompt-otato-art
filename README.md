@@ -5,7 +5,7 @@ oTATo prompt 是简体中文 macOS 提示词资料库。提示词和封面保存
 ## 当前交付
 
 - Xcode 工程：`oTATo Prompt.xcodeproj`。最低系统版本为 macOS 14，Bundle ID 为 `art.otato.prompt`。
-- 本地测试磁盘映像：`dist/` 目录中的 Universal DMG，包含 Apple Silicon 与 Intel 两种架构。该目录不纳入源码仓库。
+- 最新本地测试磁盘映像：`dist/oTATo-prompt-1.0-test-iteration2-universal.dmg`，包含 Apple Silicon 与 Intel 两种架构。该目录不纳入源码仓库。
 - 测试版以临时签名制作，尚未经过 Developer ID 签名和 Apple 公证。它用于本地验收，不是正式发行版。
 
 ## 安装和试用测试版
@@ -15,6 +15,10 @@ oTATo prompt 是简体中文 macOS 提示词资料库。提示词和封面保存
 1. 打开 `dist/` 中的测试 DMG，将 **oTATo Prompt.app** 拖到“应用程序”。
 2. 从“应用程序”启动。若 macOS 因未公证而阻止打开，先尝试启动一次，再到“系统设置 → 隐私与安全性”选择“仍要打开”。只对确认来自本工程的测试产物执行此操作。
 3. 首次启动的资料库为空。可新建 Prompt，或从应用内导入 UTF-8 编码的 `.md` / `.txt` 文件。
+
+在“设置 → 外观 → 高亮配色”中可切换“黑白反色”和“备忘录黄”；默认使用黑白反色。App 图标使用透明底的黑、白两套 Logo 线稿，由 macOS 根据**系统图标外观**选择；Finder 和 Dock 的圆角底板由系统绘制。原测试 DMG 保留在 `dist/` 中，方便对比。
+
+正文直接按常用 Markdown 排版编辑，保存、复制和导出均使用 Markdown 原文；导入的 `.txt` 也按同一方式管理。全局搜索浮层默认展示收藏，可在“设置 → 快捷键”切换为空搜索时展示最近使用。若看不到菜单栏图标，请检查“设置 → 通用 → 菜单栏显示”已开启。
 
 提示词正文、封面和应用内备份位于 macOS 沙盒的 Application Support 目录。请使用应用内“数据管理”导出 `.otatoarchive` 备份；恢复归档会替换当前资料库，并先自动备份原库。
 

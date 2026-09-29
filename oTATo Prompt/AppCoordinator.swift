@@ -1,7 +1,6 @@
 import AppKit
 import Combine
 import SwiftData
-import SwiftUI
 
 enum CopySource {
     case mainWindow
@@ -46,7 +45,6 @@ final class AppCoordinator: NSObject, ObservableObject {
     private var flushEditor: (() -> Bool)?
     private var flushEditorOwner: UUID?
     private var toastTask: Task<Void, Never>?
-    private var variablePanel: NSPanel?
     private var globalSearchController: GlobalSearchController?
     private var hotkeyManager: GlobalHotKeyManager?
     private var started = false
@@ -125,13 +123,8 @@ final class AppCoordinator: NSObject, ObservableObject {
     }
 
     func requestCopy(_ prompt: Prompt, source: CopySource = .mainWindow) {
-        let names = PromptTemplate.variables(in: prompt.content)
-        if names.isEmpty {
-            do { try finishCopy(prompt, values: [:], source: source) }
-            catch { showToast(error.localizedDescription) }
-        } else {
-            presentVariablePanel(for: prompt, names: names, source: source)
-        }
+        do { try finishCopy(prompt, source: source) }
+        catch { showToast(error.localizedDescription) }
     }
 
     func requestCopySelected() {
@@ -165,7 +158,6 @@ final class AppCoordinator: NSObject, ObservableObject {
     func prepareForLibraryRestore() -> Bool {
         guard flushEditor?() ?? true else { return false }
         globalSearchController?.dismiss(restoreFocus: false)
-        dismissVariablePanel()
         libraryRevision += 1
         selectedPromptID = nil
         openPromptID = nil
@@ -180,75 +172,24 @@ final class AppCoordinator: NSObject, ObservableObject {
         return prompts.first { $0.id == id && $0.deletedAt == nil }
     }
 
-    private func finishCopy(
-        _ prompt: Prompt,
-        values: [String: String],
-        allowEmpty: Bool = false,
-        source: CopySource
-    ) throws {
-        let result = try PromptTemplate.render(prompt.content, values: values, allowEmpty: allowEmpty)
+    private func finishCopy(_ prompt: Prompt, source: CopySource) throws {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        guard pasteboard.setString(result, forType: .string) else {
+        guard pasteboard.setString(prompt.content, forType: .string) else {
             throw CopyError.pasteboardUnavailable
         }
-        try PromptLibrary.markCopied(prompt, in: container.mainContext)
-        showToast("已复制")
+        do {
+            try PromptLibrary.markCopied(prompt, in: container.mainContext)
+            showToast("已复制")
+        } catch {
+            container.mainContext.rollback()
+            showToast("已复制，但最近使用记录未更新")
+        }
         if source == .globalSearch {
             globalSearchController?.dismiss(restoreFocus: true)
         } else if source == .menuBar {
             menuCopyCompleted += 1
         }
-    }
-
-    private func presentVariablePanel(for prompt: Prompt, names: [String], source: CopySource) {
-        variablePanel?.close()
-        let height = min(640, max(310, 185 + names.count * 48))
-        let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 460, height: height),
-            styleMask: [.titled, .closable, .fullSizeContentView],
-            backing: .buffered,
-            defer: false
-        )
-        panel.title = "填写变量"
-        panel.level = .floating
-        panel.isReleasedWhenClosed = false
-        switch UserDefaults.standard.string(forKey: "appearanceMode") {
-        case "light": panel.appearance = NSAppearance(named: .aqua)
-        case "dark": panel.appearance = NSAppearance(named: .darkAqua)
-        default: panel.appearance = nil
-        }
-        panel.contentView = NSHostingView(rootView: VariableEntryView(
-            promptTitle: prompt.title,
-            names: names,
-            onCancel: { [weak self] in self?.dismissVariablePanel() },
-            onSubmit: { [weak self] values, allowEmpty in
-                guard let self else { return }
-                do {
-                    try self.finishCopy(prompt, values: values, allowEmpty: allowEmpty, source: source)
-                    self.dismissVariablePanel()
-                } catch {
-                    self.showToast(error.localizedDescription)
-                }
-            }
-        ))
-        if let screen = NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) }) ?? NSScreen.main {
-            let frame = screen.visibleFrame
-            panel.setFrameOrigin(NSPoint(
-                x: frame.midX - panel.frame.width / 2,
-                y: frame.midY - panel.frame.height / 2
-            ))
-        } else {
-            panel.center()
-        }
-        variablePanel = panel
-        NSApp.activate(ignoringOtherApps: true)
-        panel.makeKeyAndOrderFront(nil)
-    }
-
-    private func dismissVariablePanel() {
-        variablePanel?.close()
-        variablePanel = nil
     }
 
     func showToast(_ message: String) {
@@ -259,65 +200,5 @@ final class AppCoordinator: NSObject, ObservableObject {
             guard !Task.isCancelled else { return }
             self?.toastText = nil
         }
-    }
-}
-
-private struct VariableEntryView: View {
-    let promptTitle: String
-    let names: [String]
-    let onCancel: () -> Void
-    let onSubmit: ([String: String], Bool) -> Void
-
-    @State private var values: [String: String] = [:]
-    @FocusState private var focusedName: String?
-
-    private var hasEmptyValue: Bool {
-        names.contains { values[$0, default: ""].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("填写变量")
-                .font(.title2.bold())
-            Text(promptTitle)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-            Divider()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    ForEach(names, id: \.self) { name in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(name).font(.caption).foregroundStyle(.secondary)
-                            TextField(name, text: Binding(
-                                get: { values[name, default: ""] },
-                                set: { values[name] = $0 }
-                            ))
-                            .textFieldStyle(.roundedBorder)
-                            .focused($focusedName, equals: name)
-                            .onSubmit {
-                                if !hasEmptyValue { onSubmit(values, false) }
-                            }
-                        }
-                    }
-                }
-            }
-            HStack {
-                Button("取消", action: onCancel)
-                    .keyboardShortcut(.cancelAction)
-                Spacer()
-                if hasEmptyValue {
-                    Button("仍然复制") { onSubmit(values, true) }
-                }
-                Button("复制") { onSubmit(values, false) }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(hasEmptyValue)
-                    .keyboardShortcut(.defaultAction)
-            }
-        }
-        .padding(20)
-        .frame(minWidth: 430, minHeight: 280)
-        .onAppear { focusedName = names.first }
-        .onExitCommand(perform: onCancel)
     }
 }

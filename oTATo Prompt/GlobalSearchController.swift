@@ -3,41 +3,34 @@ import Combine
 import SwiftData
 import SwiftUI
 
+enum GlobalSearchDefaultCollection: String {
+    case favorites
+    case recentlyUsed
+
+    static let preferenceKey = "globalSearchDefaultCollection"
+}
+
 @MainActor
 final class GlobalSearchController: NSObject, NSWindowDelegate {
     private weak var app: AppCoordinator?
     private let state = GlobalSearchState()
     private var panel: GlobalSearchPanel?
     private var keyMonitor: Any?
-    private var variableCloseObserver: NSObjectProtocol?
     private var previousApplication: NSRunningApplication?
     private weak var previousKeyWindow: NSWindow?
     private var isDismissing = false
-    private var isVariableFlow = false
 
     init(app: AppCoordinator) {
         self.app = app
         super.init()
-        variableCloseObserver = NotificationCenter.default.addObserver(
-            forName: NSWindow.willCloseNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            guard let window = notification.object as? NSWindow, window.title == "填写变量" else { return }
-            Task { @MainActor [weak self] in
-                guard let self, self.isVariableFlow else { return }
-                self.dismiss(restoreFocus: true)
-            }
-        }
     }
 
     deinit {
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
-        if let variableCloseObserver { NotificationCenter.default.removeObserver(variableCloseObserver) }
     }
 
     func toggle() {
-        if panel?.isVisible == true || isVariableFlow {
+        if panel?.isVisible == true {
             dismiss(restoreFocus: true)
         } else {
             show()
@@ -55,18 +48,10 @@ final class GlobalSearchController: NSObject, NSWindowDelegate {
         }
         let applicationToRestore = previousApplication
         let windowToRestore = previousKeyWindow
-        let waitForVariablePanel = isVariableFlow
-        isVariableFlow = false
         previousApplication = nil
         previousKeyWindow = nil
         if restoreFocus {
-            if waitForVariablePanel {
-                DispatchQueue.main.async { [weak self] in
-                    self?.restoreFocus(to: applicationToRestore, window: windowToRestore)
-                }
-            } else {
-                self.restoreFocus(to: applicationToRestore, window: windowToRestore)
-            }
+            self.restoreFocus(to: applicationToRestore, window: windowToRestore)
         }
         isDismissing = false
     }
@@ -82,7 +67,7 @@ final class GlobalSearchController: NSObject, NSWindowDelegate {
     }
 
     func windowDidResignKey(_ notification: Notification) {
-        guard panel?.isVisible == true, !isDismissing, !isVariableFlow else { return }
+        guard panel?.isVisible == true, !isDismissing else { return }
         dismiss(restoreFocus: false)
     }
 
@@ -135,7 +120,7 @@ final class GlobalSearchController: NSObject, NSWindowDelegate {
             onOpen: { [weak self] prompt in self?.open(prompt) },
             onCancel: { [weak self] in self?.dismiss(restoreFocus: true) },
             onHeightChange: { [weak self] height in self?.resizePanel(to: height) }
-        ))
+        ).applyAppAccent())
         self.panel = panel
         return panel
     }
@@ -190,10 +175,7 @@ final class GlobalSearchController: NSObject, NSWindowDelegate {
 
     private func copy(_ prompt: Prompt) {
         guard let app else { return }
-        let needsVariables = !PromptTemplate.variables(in: prompt.content).isEmpty
-        if needsVariables { isVariableFlow = true }
         app.requestCopy(prompt, source: .globalSearch)
-        if needsVariables { panel?.orderOut(nil) }
     }
 
     private func open(_ prompt: Prompt) {
@@ -249,6 +231,8 @@ private final class GlobalSearchState: ObservableObject {
 
     func requestFocus() { focusRequest += 1 }
 
+    func refreshResults() { searchNow() }
+
     func moveSelection(by offset: Int) {
         guard !results.isEmpty else { return }
         selectedIndex = (selectedIndex + offset + results.count) % results.count
@@ -281,7 +265,11 @@ private final class GlobalSearchState: ObservableObject {
     private func searchNow() {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
-            results = PromptSearch.search(prompts, query: "", scope: .recentlyUsed, folders: folders, limit: 8)
+            let preference = GlobalSearchDefaultCollection(
+                rawValue: UserDefaults.standard.string(forKey: GlobalSearchDefaultCollection.preferenceKey) ?? ""
+            ) ?? .favorites
+            let scope: PromptSearch.Scope = preference == .favorites ? .favorites : .recentlyUsed
+            results = PromptSearch.search(prompts, query: "", scope: scope, folders: folders, limit: 8)
         } else {
             results = PromptSearch.search(prompts, query: trimmed, folders: folders, limit: 10)
         }
@@ -291,6 +279,7 @@ private final class GlobalSearchState: ObservableObject {
 
 @MainActor
 private struct GlobalSearchView: View {
+    @Environment(\.appAccentStyle) private var accent
     @ObservedObject var state: GlobalSearchState
     let onCopy: (Prompt) -> Void
     let onOpen: (Prompt) -> Void
@@ -298,8 +287,14 @@ private struct GlobalSearchView: View {
     let onHeightChange: (CGFloat) -> Void
 
     @AppStorage("globalHotkeyDisplay") private var hotkeyDisplay = "⌥ Space"
+    @AppStorage("globalSearchDefaultCollection") private var defaultCollection = GlobalSearchDefaultCollection.favorites.rawValue
     @Environment(\.colorScheme) private var colorScheme
     @FocusState private var searchFocused: Bool
+    @State private var hoveredPromptID: UUID?
+
+    private var emptyCollectionTitle: String {
+        defaultCollection == GlobalSearchDefaultCollection.recentlyUsed.rawValue ? "最近" : "收藏"
+    }
 
     static func preferredHeight(for resultCount: Int) -> CGFloat {
         let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
@@ -368,7 +363,7 @@ private struct GlobalSearchView: View {
             .padding(.bottom, 8)
 
             HStack {
-                Text(state.query.isEmpty ? "最近" : "搜索结果")
+                Text(state.query.isEmpty ? emptyCollectionTitle : "搜索结果")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -385,8 +380,11 @@ private struct GlobalSearchView: View {
                 emptyState(icon: "exclamationmark.triangle", message: error)
             } else if state.results.isEmpty {
                 emptyState(
-                    icon: state.query.isEmpty ? "clock" : "magnifyingglass",
-                    message: state.query.isEmpty ? "输入关键词搜索提示词" : "没有找到匹配的提示词"
+                    icon: state.query.isEmpty
+                        ? (emptyCollectionTitle == "收藏" ? "star" : "clock") : "magnifyingglass",
+                    message: state.query.isEmpty
+                        ? (emptyCollectionTitle == "收藏" ? "还没有收藏的提示词" : "还没有最近使用的提示词")
+                        : "没有找到匹配的提示词"
                 )
             } else {
                 ScrollViewReader { proxy in
@@ -394,9 +392,11 @@ private struct GlobalSearchView: View {
                         LazyVStack(spacing: 3) {
                             ForEach(Array(state.results.enumerated()), id: \.element.id) { index, prompt in
                                 Button { onCopy(prompt) } label: {
-                                    resultRow(prompt, selected: index == state.selectedIndex)
+                                    resultRow(prompt, selected: index == state.selectedIndex,
+                                              hovered: hoveredPromptID == prompt.id)
                                 }
                                 .buttonStyle(.plain)
+                                .onHover { hoveredPromptID = $0 ? prompt.id : nil }
                                 .accessibilityLabel("复制 \(prompt.title)")
                                 .accessibilityValue(index == state.selectedIndex ? "已选中" : "")
                                 .id(index)
@@ -448,7 +448,7 @@ private struct GlobalSearchView: View {
                 .overlay {
                     RoundedRectangle(cornerRadius: 20)
                         .fill(colorScheme == .dark
-                              ? Color(red: 0.08, green: 0.12, blue: 0.17).opacity(0.70)
+                              ? Color(red: 0.10, green: 0.10, blue: 0.10).opacity(0.70)
                               : Color.white.opacity(0.30))
                 }
         }
@@ -460,10 +460,11 @@ private struct GlobalSearchView: View {
         }
         .onChange(of: state.results.count) { _, _ in onHeightChange(panelHeight) }
         .onChange(of: state.focusRequest) { _, _ in focusSearchField() }
+        .onChange(of: defaultCollection) { _, _ in state.refreshResults() }
         .onExitCommand(perform: onCancel)
     }
 
-    private func resultRow(_ prompt: Prompt, selected: Bool) -> some View {
+    private func resultRow(_ prompt: Prompt, selected: Bool, hovered: Bool) -> some View {
         HStack(spacing: 14) {
             cover(for: prompt)
             VStack(alignment: .leading, spacing: 5) {
@@ -498,7 +499,7 @@ private struct GlobalSearchView: View {
         }
         .padding(.horizontal, 12)
         .frame(height: 79)
-        .background(selected ? Color.primary.opacity(0.11) : Color.clear,
+        .background(selected ? accent.softSelection : hovered ? Color.primary.opacity(0.055) : Color.clear,
                     in: RoundedRectangle(cornerRadius: 11))
         .contentShape(RoundedRectangle(cornerRadius: 11))
     }
@@ -508,15 +509,15 @@ private struct GlobalSearchView: View {
         if let image = PromptPresentation.croppedImage(for: prompt) {
             Image(nsImage: image)
                 .resizable()
-                .scaledToFill()
-                .frame(width: 86, height: 66)
-                .clipped()
+                .scaledToFit()
+                .frame(width: 88, height: 49.5)
+                .background(.primary.opacity(0.065))
                 .clipShape(RoundedRectangle(cornerRadius: 7))
         } else {
             Image(systemName: "doc.text")
                 .font(.system(size: 23, weight: .ultraLight))
                 .foregroundStyle(.secondary)
-                .frame(width: 86, height: 66)
+                .frame(width: 88, height: 49.5)
                 .background(.primary.opacity(0.065), in: RoundedRectangle(cornerRadius: 7))
         }
     }

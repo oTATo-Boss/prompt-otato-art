@@ -9,10 +9,10 @@ struct PromptEditorView: View {
     @EnvironmentObject private var app: AppCoordinator
     @AppStorage("editorFontSize") private var editorFontSize = 16.0
     @AppStorage("editorWrapLines") private var editorWrapLines = true
-    @AppStorage("editorPreviewEnabled") private var previewOnOpen = false
 
     let prompt: Prompt
     let folders: [Folder]
+    let titlebarInset: CGFloat
     let onBack: () -> Void
     let onCopy: () -> Void
     let onExport: () -> Void
@@ -20,83 +20,80 @@ struct PromptEditorView: View {
 
     @State private var title: String
     @State private var content: String
-    @State private var format: PromptFormat
     @State private var folderID: UUID?
     @State private var tagInput: String
     @State private var pendingTag = ""
     @State private var addingTag = false
-    @State private var showHeaderTagInput = false
     @State private var favorite: Bool
-    @State private var preview = false
-    @State private var showCrop = false
-    @State private var cropImage: NSImage?
-    @State private var cropInitial = CoverCrop.full
-    @State private var recropping = false
+    @State private var showInspector = false
     @State private var saveTask: Task<Void, Never>?
     @State private var saveError: String?
-    @State private var insertion: EditorInsertion?
+    @State private var editorCommand: EditorCommand?
     @State private var openedLibraryRevision: Int?
     @State private var editorSessionID = UUID()
     @FocusState private var pendingTagFocused: Bool
-    @FocusState private var headerTagFocused: Bool
 
-    init(prompt: Prompt, folders: [Folder], onBack: @escaping () -> Void,
+    init(prompt: Prompt, folders: [Folder], titlebarInset: CGFloat = 20,
+         onBack: @escaping () -> Void,
          onCopy: @escaping () -> Void, onExport: @escaping () -> Void,
          onError: @escaping (String) -> Void) {
         self.prompt = prompt
         self.folders = folders
+        self.titlebarInset = titlebarInset
         self.onBack = onBack
         self.onCopy = onCopy
         self.onExport = onExport
         self.onError = onError
         _title = State(initialValue: prompt.title)
         _content = State(initialValue: prompt.content)
-        _format = State(initialValue: prompt.format)
         _folderID = State(initialValue: prompt.folderID)
         _tagInput = State(initialValue: prompt.tagNames.joined(separator: ", "))
         _favorite = State(initialValue: prompt.isFavorite)
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
+        GeometryReader { geometry in
+            let wide = geometry.size.width >= 840
+            VStack(spacing: 0) {
+                HStack(spacing: 12) {
                 Button {
                     if flush(finalizeTitle: true) { onBack() }
                 } label: { Label("返回", systemImage: "chevron.left") }
                 .buttonStyle(.plain)
-                Spacer()
-                Button(action: copyCurrent) { Label("复制 Prompt", systemImage: "doc.on.doc") }
-                    .buttonStyle(.bordered)
-            }
-            .padding(.horizontal, 18).frame(height: 60)
-            Divider()
-
-            HStack(spacing: 0) {
-                VStack(spacing: 0) {
-                    editorHeader
-                    Divider()
-                    editorBody
-                        .background(Color(nsColor: .textBackgroundColor),
-                                    in: RoundedRectangle(cornerRadius: 8))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 8)
-                                .strokeBorder(Color(nsColor: .separatorColor).opacity(0.7))
+                .modifier(EditorHoverSurface())
+                    Spacer()
+                    if !wide {
+                        Button { showInspector.toggle() } label: {
+                            Label("详情", systemImage: "sidebar.right")
                         }
-                        .padding(.horizontal, 22)
-                        .padding(.bottom, 14)
-                    Divider()
-                    editorFooter
+                        .buttonStyle(.bordered)
+                        .popover(isPresented: $showInspector, arrowEdge: .bottom) {
+                            inspector.frame(width: 290, height: 490)
+                        }
+                    }
+                    Button(action: copyCurrent) {
+                        Label("复制 Prompt", systemImage: "doc.on.doc")
+                    }
+                    .buttonStyle(.borderedProminent)
                 }
-                .frame(maxWidth: .infinity)
+                .padding(.leading, titlebarInset)
+                .padding(.trailing, 20)
+                .frame(height: 60)
                 Divider()
-                inspector
-                    .frame(width: 300)
+
+                HStack(spacing: 0) {
+                    editorPane
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    if wide {
+                        Divider()
+                        inspector.frame(width: 270)
+                    }
+                }
             }
         }
         .background(Color(nsColor: .windowBackgroundColor))
         .onAppear {
             openedLibraryRevision = app.libraryRevision
-            preview = previewOnOpen && format == .markdown
             app.selectedPromptID = prompt.id
             app.installEditorFlush(owner: editorSessionID) { flush(finalizeTitle: true) }
         }
@@ -108,11 +105,10 @@ struct PromptEditorView: View {
             app.clearEditorFlush(owner: editorSessionID)
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase != .active { saveTask?.cancel(); flush(finalizeTitle: true) }
+            if phase != .active { saveTask?.cancel(); _ = flush(finalizeTitle: true) }
         }
         .onChange(of: title) { _, _ in scheduleSave() }
         .onChange(of: content) { _, _ in scheduleSave() }
-        .onChange(of: format) { _, _ in scheduleSave() }
         .onChange(of: folderID) { _, _ in scheduleSave() }
         .onChange(of: tagInput) { _, _ in scheduleSave() }
         .onChange(of: favorite) { _, _ in scheduleSave() }
@@ -123,316 +119,185 @@ struct PromptEditorView: View {
             if folderID != value { folderID = value }
         }
         .onChange(of: prompt.tagNames) { _, value in
-            let names = value.joined(separator: ", ")
-            if Set(parsedTags) != Set(value) { tagInput = names }
-        }
-        .sheet(isPresented: $showCrop) {
-            if let cropImage {
-                CoverCropSheet(image: cropImage, initialCrop: cropInitial) { crop in
-                    do {
-                        if recropping {
-                            try PromptLibrary.setCoverCrop(crop, for: prompt, in: context)
-                        } else {
-                            let stored = try PromptStorage.saveCoverAsset(image: cropImage)
-                            try PromptLibrary.setCover(stored, crop: crop, for: prompt, in: context)
-                        }
-                    } catch { onError(error.localizedDescription) }
-                    showCrop = false
-                } onCancel: { showCrop = false }
-            }
+            if Set(parsedTags) != Set(value) { tagInput = value.joined(separator: ", ") }
         }
     }
 
-    private var editorHeader: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 10) {
+    private var editorPane: some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 7) {
                 TextField("提示词标题", text: $title)
                     .textFieldStyle(.plain)
                     .font(.system(size: 23, weight: .semibold))
                     .accessibilityLabel("Prompt 标题")
-                Text(PromptPresentation.date(prompt.updatedAt))
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            ScrollView(.horizontal) {
-                HStack(spacing: 6) {
-                    ForEach(parsedTags, id: \.self) { tag in
-                        Text("#\(tag)")
-                            .font(.system(size: 12, weight: .medium))
-                            .lineLimit(1)
-                            .padding(.horizontal, 9).padding(.vertical, 5)
-                            .background(Color.primary.opacity(0.075), in: Capsule())
-                    }
-                    if parsedTags.isEmpty {
-                        Text("添加标签可更快找到它")
-                            .font(.caption).foregroundStyle(.tertiary)
-                    }
-                    Button {
-                        showHeaderTagInput = true
-                    } label: {
-                        Image(systemName: "plus")
-                            .font(.system(size: 11, weight: .semibold))
-                            .frame(width: 26, height: 24)
-                            .background(Color.primary.opacity(0.075), in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(parsedTags.count >= 10)
-                    .help("添加标签")
-                    .accessibilityLabel("添加标签")
-                    .popover(isPresented: $showHeaderTagInput, arrowEdge: .bottom) {
-                        HStack(spacing: 8) {
-                            TextField("输入标签", text: $pendingTag)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 180)
-                                .focused($headerTagFocused)
-                                .onSubmit {
-                                    addTag()
-                                    showHeaderTagInput = false
-                                }
-                            Button("添加") {
-                                addTag()
-                                showHeaderTagInput = false
+                Text("最后编辑 \(PromptPresentation.date(prompt.updatedAt))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if !parsedTags.isEmpty {
+                    ScrollView(.horizontal) {
+                        HStack(spacing: 6) {
+                            ForEach(parsedTags, id: \.self) { tag in
+                                Text("#\(tag)")
+                                    .font(.system(size: 11))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Color.primary.opacity(0.06), in: Capsule())
                             }
-                            .disabled(pendingTag.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         }
-                        .padding(12)
-                        .onAppear { headerTagFocused = true }
                     }
+                    .scrollIndicators(.hidden)
+                    .frame(height: 24)
                 }
             }
-            .scrollIndicators(.hidden)
-            .frame(height: 24)
-        }
-        .padding(.horizontal, 22).padding(.vertical, 27)
-    }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 22)
+            .padding(.vertical, 15)
 
-    private var editorBody: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Picker("格式", selection: $format) {
-                    Text("Markdown").tag(PromptFormat.markdown)
-                    Text("TXT").tag(PromptFormat.txt)
-                }
-                .pickerStyle(.menu).frame(width: 125)
-                if format == .markdown && !preview {
-                    Divider().frame(height: 18)
-                    formattingButton("粗体", "bold", "**加粗文本**")
-                    formattingButton("斜体", "italic", "*斜体文本*")
-                    formattingButton("代码", "chevron.left.forwardslash.chevron.right", "`代码`")
-                    formattingButton("链接", "link", "[链接文字](https://)")
-                    formattingButton("列表", "list.bullet", "- 列表项")
-                    formattingButton("引用", "text.quote", "> 引用")
-                }
-                Spacer()
-                if format == .markdown {
-                    Button(preview ? "编辑" : "预览") { preview.toggle() }
-                        .buttonStyle(.borderless)
-                        .accessibilityLabel(preview ? "返回源文编辑" : "预览 Markdown")
-                }
-            }
-            .controlSize(.small)
-            .padding(.horizontal, 20).frame(height: 38)
-            Divider()
-            Group {
-                if preview && format == .markdown {
-                    ScrollView {
-                        Text(markdownAttributed)
-                            .frame(maxWidth: .infinity, alignment: .topLeading)
-                            .textSelection(.enabled)
-                            .padding(22)
+            VStack(spacing: 0) {
+                formattingToolbar
+                Divider()
+                NativeTextEditor(text: $content, fontSize: editorFontSize,
+                                 wrapLines: editorWrapLines, command: editorCommand)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityLabel("Prompt 正文")
+                if let saveError {
+                    Divider()
+                    HStack {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                        Text("保存失败：\(saveError)")
+                        Spacer()
+                        Button("重试") { _ = flush(finalizeTitle: false) }
                     }
-                } else {
-                    NativeTextEditor(text: $content, fontSize: editorFontSize,
-                                     wrapLines: editorWrapLines,
-                                     insertion: insertion)
-                        .padding(.horizontal, 16).padding(.vertical, 12)
-                        .accessibilityLabel("Prompt 正文")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .padding(.horizontal, 14)
+                    .frame(height: 34)
                 }
             }
+            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 9))
+            .overlay {
+                RoundedRectangle(cornerRadius: 9)
+                    .strokeBorder(Color(nsColor: .separatorColor).opacity(0.45), lineWidth: 0.5)
+            }
+            .padding(.horizontal, 20)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            if let saveError {
-                HStack {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                    Text("保存失败：\(saveError)")
-                    Spacer()
-                    Button("重试") { flush(finalizeTitle: false) }
+
+            HStack(spacing: 10) {
+                Text("共 \(content.count) 个字符")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button {
+                    if flush(finalizeTitle: true) { onExport() }
+                } label: { Label("导出…", systemImage: "square.and.arrow.up") }
+                .buttonStyle(.bordered)
+                Button(action: copyCurrent) {
+                    Label("复制 Prompt", systemImage: "doc.on.doc")
                 }
-                .font(.caption).foregroundStyle(.red)
-                .padding(.horizontal, 20).padding(.vertical, 8)
+                .buttonStyle(.borderedProminent)
             }
+            .padding(.horizontal, 20)
+            .frame(height: 58)
         }
     }
 
-    private var editorFooter: some View {
-        HStack(spacing: 8) {
-            Text("共 \(content.count) 个字符")
-                .font(.caption).foregroundStyle(.secondary)
-                .fixedSize()
-            Spacer(minLength: 4)
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) {
-                    if format == .markdown {
-                        Button {
-                            preview.toggle()
-                        } label: {
-                            Label(preview ? "编辑" : "预览", systemImage: preview ? "pencil" : "eye")
-                                .frame(minWidth: 72, minHeight: 28)
-                        }
-                        .buttonStyle(.bordered)
-                    }
-                    Button {
-                        if flush(finalizeTitle: true) { onExport() }
-                    } label: {
-                        Label("导出…", systemImage: "square.and.arrow.up")
-                            .frame(minWidth: 76, minHeight: 28)
-                    }
-                    .buttonStyle(.bordered)
-                    Button(action: copyCurrent) {
-                        Label("复制 Prompt", systemImage: "doc.on.doc")
-                            .frame(minWidth: 118, minHeight: 28)
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-                .fixedSize()
-                HStack(spacing: 6) {
-                    if format == .markdown {
-                        Button { preview.toggle() } label: {
-                            Image(systemName: preview ? "pencil" : "eye")
-                                .frame(minWidth: 26, minHeight: 28)
-                        }
-                        .help(preview ? "编辑" : "预览")
-                        .accessibilityLabel(preview ? "编辑" : "预览")
-                        .buttonStyle(.bordered)
-                    }
-                    Button {
-                        if flush(finalizeTitle: true) { onExport() }
-                    } label: {
-                        Image(systemName: "square.and.arrow.up")
-                            .frame(minWidth: 26, minHeight: 28)
-                    }
-                    .help("导出…")
-                    .accessibilityLabel("导出…")
-                    .buttonStyle(.bordered)
-                    Button(action: copyCurrent) {
-                        Label("复制 Prompt", systemImage: "doc.on.doc")
-                            .frame(minWidth: 100, minHeight: 28)
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-                .fixedSize()
-            }
+    private var formattingToolbar: some View {
+        HStack(spacing: 11) {
+            formatButton("标题 1", "textformat.size.larger", .heading1)
+            formatButton("标题 2", "textformat.size", .heading2)
+            Divider().frame(height: 16)
+            formatButton("粗体", "bold", .bold)
+            formatButton("斜体", "italic", .italic)
+            formatButton("列表", "list.bullet", .bullet)
+            formatButton("引用", "text.quote", .quote)
+            formatButton("代码", "chevron.left.forwardslash.chevron.right", .code)
+            formatButton("链接", "link", .link)
+            Spacer()
         }
-        .controlSize(.regular)
-        .padding(.horizontal, 20).frame(height: 56)
+        .padding(.horizontal, 14)
+        .frame(height: 36)
+    }
+
+    private func formatButton(_ name: String, _ symbol: String,
+                              _ action: MarkdownFormatAction) -> some View {
+        Button { editorCommand = EditorCommand(action: action) } label: {
+            Image(systemName: symbol).frame(width: 19, height: 24)
+        }
+        .buttonStyle(.plain)
+        .modifier(EditorHoverSurface())
+        .help(name)
+        .accessibilityLabel(name)
     }
 
     private var inspector: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 17) {
                 Text("封面").font(.system(size: 12, weight: .semibold))
                 CoverPreview(image: PromptPresentation.croppedImage(for: prompt))
-                    .frame(height: 160)
+                    .aspectRatio(16 / 9, contentMode: .fit)
                     .onDrop(of: [.fileURL, .image], isTargeted: nil, perform: receiveCover)
-                    .overlay(alignment: .topTrailing) {
-                        Menu {
-                            if prompt.coverPath != nil {
-                                Button("裁切封面", systemImage: "crop.rotate") { recropCover() }
-                            }
-                            Button("从剪贴板粘贴", systemImage: "doc.on.clipboard") { pasteCover() }
-                        } label: {
-                            Image(systemName: "ellipsis")
-                                .font(.system(size: 14, weight: .semibold))
-                                .frame(width: 30, height: 30)
-                                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 7))
-                        }
-                        .menuStyle(.borderlessButton)
-                        .accessibilityLabel("更多封面操作")
-                        .padding(8)
-                    }
-                HStack(spacing: 8) {
-                    Button(action: chooseCover) {
-                        Label(prompt.coverPath == nil ? "添加封面" : "更换封面", systemImage: "photo")
-                            .frame(maxWidth: .infinity, minHeight: 30)
-                    }
+                HStack(spacing: 6) {
+                    Button(prompt.coverPath == nil ? "添加封面" : "更换封面", action: chooseCover)
+                    Button("粘贴", action: pasteCover)
                     if prompt.coverPath != nil {
-                        Button {
-                            do { try PromptLibrary.setCover(nil, for: prompt, in: context) }
-                            catch { onError(error.localizedDescription) }
-                        } label: {
-                            Label("移除", systemImage: "trash")
-                                .frame(maxWidth: .infinity, minHeight: 30)
-                        }
+                        Button("移除", role: .destructive) { removeCover() }
                     }
                 }
                 .buttonStyle(.bordered)
-                .controlSize(.regular)
                 Divider()
                 Text("标签").font(.system(size: 12, weight: .semibold))
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 78), spacing: 7)],
-                          alignment: .leading, spacing: 8) {
-                    ForEach(parsedTags, id: \.self) { tag in
-                        Button { removeTag(tag) } label: {
-                            Text("#\(tag)")
-                                .font(.system(size: 12))
-                                .lineLimit(1)
-                                .frame(maxWidth: .infinity)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 7)
-                                .background(Color.primary.opacity(0.07), in: Capsule())
+                if !parsedTags.isEmpty {
+                    ScrollView(.horizontal) {
+                        HStack(spacing: 6) {
+                        ForEach(parsedTags, id: \.self) { tag in
+                            Button { removeTag(tag) } label: {
+                                Text("#\(tag) ×")
+                                    .font(.system(size: 11))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 5)
+                                    .background(Color.primary.opacity(0.07), in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .modifier(EditorHoverSurface())
+                            .help("移除标签 \(tag)")
                         }
-                        .buttonStyle(.plain)
-                        .help("移除标签 \(tag)")
-                        .accessibilityLabel("移除标签 \(tag)")
+                        }
                     }
-                    Button {
-                        addingTag = true
-                        pendingTagFocused = true
-                    } label: {
-                        Label("添加标签", systemImage: "plus")
-                            .font(.system(size: 12))
-                            .lineLimit(1)
-                            .frame(maxWidth: .infinity)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 7)
-                            .background(Color.primary.opacity(0.07), in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(parsedTags.count >= 10)
-                }
-                .padding(9)
-                .background(Color(nsColor: .textBackgroundColor),
-                            in: RoundedRectangle(cornerRadius: 8))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 8)
-                        .strokeBorder(Color(nsColor: .separatorColor).opacity(0.7))
+                    .scrollIndicators(.hidden)
                 }
                 if addingTag {
                     TextField("输入标签后按回车", text: $pendingTag)
-                        .textFieldStyle(.roundedBorder)
+                        .textFieldStyle(.plain)
+                        .padding(7)
+                        .background(Color(nsColor: .textBackgroundColor),
+                                    in: RoundedRectangle(cornerRadius: 6))
                         .focused($pendingTagFocused)
                         .onSubmit(addTag)
                         .accessibilityLabel("添加标签，最多 10 个")
+                } else {
+                    Button {
+                        addingTag = true
+                        pendingTagFocused = true
+                    } label: { Label("添加标签", systemImage: "plus") }
+                    .buttonStyle(.bordered)
+                    .disabled(parsedTags.count >= 10)
                 }
-                Text("最多 10 个，每个不超过 20 字")
-                    .font(.caption2).foregroundStyle(.secondary)
                 Divider()
-                Text("分类").font(.system(size: 12, weight: .semibold))
+                Text("保存位置").font(.system(size: 12, weight: .semibold))
                 FolderPicker(folders: folders, selection: $folderID)
-                Divider()
                 Toggle("已收藏", isOn: $favorite)
                 Divider()
-                VStack(alignment: .leading, spacing: 6) {
-                    LabeledContent("创建时间", value: PromptPresentation.date(prompt.createdAt))
-                    LabeledContent("最后编辑", value: PromptPresentation.date(prompt.updatedAt))
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("创建于 \(PromptPresentation.date(prompt.createdAt))")
                     if let last = prompt.lastUsedAt {
-                        LabeledContent("最后使用", value: PromptPresentation.date(last))
+                        Text("最近使用 \(PromptPresentation.date(last))")
                     }
                 }
-                .font(.caption2).foregroundStyle(.secondary)
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 20)
-            .padding(.top, 32)
-            .padding(.bottom, 16)
+            .padding(18)
         }
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.35))
     }
@@ -464,24 +329,11 @@ struct PromptEditorView: View {
         addingTag = false
     }
 
-    private var markdownAttributed: AttributedString {
-        (try? AttributedString(markdown: content)) ?? AttributedString(content)
-    }
-
-    private func formattingButton(_ name: String, _ symbol: String, _ snippet: String) -> some View {
-        Button {
-            insertion = EditorInsertion(text: snippet)
-        } label: { Image(systemName: symbol) }
-            .buttonStyle(.borderless)
-            .help(name)
-            .accessibilityLabel("插入\(name)")
-    }
-
     private func scheduleSave() {
         saveTask?.cancel()
         saveTask = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(400))
-            if !Task.isCancelled { flush(finalizeTitle: false) }
+            if !Task.isCancelled { _ = flush(finalizeTitle: false) }
         }
     }
 
@@ -490,9 +342,7 @@ struct PromptEditorView: View {
         guard prompt.deletedAt == nil,
               openedLibraryRevision == app.libraryRevision else { return false }
         do {
-            guard title.count <= 100 else {
-                throw PromptLibraryError.invalidTitle
-            }
+            guard title.count <= 100 else { throw PromptLibraryError.invalidTitle }
             let resolved: String
             if finalizeTitle && title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 resolved = (try? PromptLibrary.resolvedTitle(title, content: content)) ?? "未命名 Prompt"
@@ -500,12 +350,11 @@ struct PromptEditorView: View {
                 resolved = title
             }
             let changed = prompt.title != resolved || prompt.content != content ||
-                prompt.format != format || prompt.folderID != folderID ||
-                prompt.isFavorite != favorite || Set(prompt.tagNames) != Set(parsedTags)
+                prompt.folderID != folderID || prompt.isFavorite != favorite ||
+                Set(prompt.tagNames) != Set(parsedTags)
             guard changed else { saveError = nil; return true }
             prompt.title = resolved
             prompt.content = content
-            prompt.format = format
             prompt.folderID = folderID
             prompt.isFavorite = favorite
             try PromptLibrary.setTags(parsedTags, for: prompt, in: context)
@@ -527,10 +376,9 @@ struct PromptEditorView: View {
     private func chooseCover() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.image]
-        panel.canChooseFiles = true
         guard panel.runModal() == .OK, let url = panel.url,
               let image = NSImage(contentsOf: url) else { return }
-        cropImage = image; cropInitial = .full; recropping = false; showCrop = true
+        replaceCover(with: image)
     }
 
     private func pasteCover() {
@@ -538,12 +386,19 @@ struct PromptEditorView: View {
             onError("剪贴板中没有图片。")
             return
         }
-        cropImage = image; cropInitial = .full; recropping = false; showCrop = true
+        replaceCover(with: image)
     }
 
-    private func recropCover() {
-        guard let path = prompt.coverPath, let image = PromptStorage.loadCover(at: path) else { return }
-        cropImage = image; cropInitial = prompt.coverCrop; recropping = true; showCrop = true
+    private func replaceCover(with image: NSImage) {
+        do {
+            let stored = try PromptStorage.saveCoverAsset(image: image)
+            try PromptLibrary.setCover(stored, crop: .full, for: prompt, in: context)
+        } catch { onError(error.localizedDescription) }
+    }
+
+    private func removeCover() {
+        do { try PromptLibrary.setCover(nil, for: prompt, in: context) }
+        catch { onError(error.localizedDescription) }
     }
 
     private func receiveCover(_ providers: [NSItemProvider]) -> Bool {
@@ -551,19 +406,27 @@ struct PromptEditorView: View {
         if provider.canLoadObject(ofClass: NSImage.self) {
             _ = provider.loadObject(ofClass: NSImage.self) { image, _ in
                 guard let image = image as? NSImage else { return }
-                Task { @MainActor in
-                    cropImage = image; cropInitial = .full; recropping = false; showCrop = true
-                }
+                Task { @MainActor in replaceCover(with: image) }
             }
             return true
         }
         _ = provider.loadObject(ofClass: NSURL.self) { object, _ in
             guard let url = object as? URL, let image = NSImage(contentsOf: url) else { return }
-            Task { @MainActor in
-                cropImage = image; cropInitial = .full; recropping = false; showCrop = true
-            }
+            Task { @MainActor in replaceCover(with: image) }
         }
         return true
+    }
+}
+
+struct EditorHoverSurface: ViewModifier {
+    @State private var hovering = false
+
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, 5)
+            .background(Color.primary.opacity(hovering ? 0.065 : 0),
+                        in: RoundedRectangle(cornerRadius: 6))
+            .onHover { hovering = $0 }
     }
 }
 
@@ -595,13 +458,16 @@ struct FolderPicker: View {
 
 struct CoverPreview: View {
     let image: NSImage?
+
     var body: some View {
         GeometryReader { geometry in
             Group {
                 if let image {
-                    Image(nsImage: image).resizable().scaledToFill()
+                    Image(nsImage: image)
+                        .resizable()
+                        .scaledToFit()
                         .frame(width: geometry.size.width, height: geometry.size.height)
-                        .clipped()
+                        .background(Color(nsColor: .textBackgroundColor))
                 } else {
                     VStack(spacing: 7) {
                         Image(systemName: "photo.badge.plus").font(.title2)
@@ -613,50 +479,11 @@ struct CoverPreview: View {
                 }
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .overlay { RoundedRectangle(cornerRadius: 6).strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.5) }
-    }
-}
-
-struct CoverCropSheet: View {
-    let image: NSImage
-    let initialCrop: CoverCrop
-    let onApply: (CoverCrop) -> Void
-    let onCancel: () -> Void
-    @State private var zoom = 1.0
-    @State private var horizontal = 0.5
-    @State private var vertical = 0.5
-
-    private var baseSize: (Double, Double) {
-        let ratio = image.size.width / max(image.size.height, 1)
-        return ratio >= 1.6 ? (1.6 / ratio, 1) : (1, ratio / 1.6)
-    }
-    private var crop: CoverCrop {
-        let width = baseSize.0 / zoom, height = baseSize.1 / zoom
-        return CoverCrop(x: (1 - width) * horizontal, y: (1 - height) * vertical,
-                         width: width, height: height)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("裁切封面").font(.title3.weight(.semibold))
-            CoverPreview(image: PromptPresentation.crop(image, to: crop))
-                .frame(width: 480, height: 300)
-            LabeledContent("缩放") { Slider(value: $zoom, in: 1...3).frame(width: 300) }
-            LabeledContent("水平位置") { Slider(value: $horizontal, in: 0...1).frame(width: 300) }
-            LabeledContent("垂直位置") { Slider(value: $vertical, in: 0...1).frame(width: 300) }
-            HStack {
-                Text("封面将以 16:10 显示").font(.caption).foregroundStyle(.secondary)
-                Spacer()
-                Button("取消", action: onCancel)
-                Button("使用封面") { onApply(crop) }.buttonStyle(.borderedProminent)
-            }
+        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .overlay {
+            RoundedRectangle(cornerRadius: 7)
+                .strokeBorder(Color(nsColor: .separatorColor).opacity(0.55), lineWidth: 0.5)
         }
-        .padding(20)
-        .onAppear {
-            zoom = max(1, min(3, baseSize.0 / initialCrop.width))
-            horizontal = initialCrop.x / max(1 - initialCrop.width, 0.001)
-            vertical = initialCrop.y / max(1 - initialCrop.height, 0.001)
-        }
+        .accessibilityLabel(image == nil ? "未添加封面" : "封面图片")
     }
 }

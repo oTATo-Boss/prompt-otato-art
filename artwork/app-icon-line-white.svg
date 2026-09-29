@@ -1,0 +1,19 @@
+<svg width="1024" height="1024" viewBox="0 0 144 144" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Extracted from the supplied oTATo LOGO.svg; no background or opaque fills. -->
+  <defs>
+    <mask id="cheek-cutout" maskUnits="userSpaceOnUse" x="0" y="0" width="120" height="120">
+      <rect width="120" height="120" fill="#FFFFFF"/>
+      <circle cx="24" cy="74" r="11" fill="#000000"/>
+      <circle cx="96" cy="74" r="11" fill="#000000"/>
+    </mask>
+  </defs>
+  <g transform="translate(12 12)" stroke="#FFFFFF">
+    <path d="M60 25C88 25 98 48 98 68C98 88 84 100 60 100C36 100 22 88 22 68C22 48 32 25 60 25Z" stroke-width="6" stroke-linejoin="round" mask="url(#cheek-cutout)"/>
+    <path d="M35 55H49M42 55V71" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M71 55H85M78 55V71" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M54 70Q60 58 66 70" stroke-width="5" stroke-linecap="round"/>
+    <line x1="57" y1="65" x2="63" y2="65" stroke-width="4" stroke-linecap="round"/>
+    <circle cx="24" cy="74" r="11" stroke-width="6"/>
+    <circle cx="96" cy="74" r="11" stroke-width="6"/>
+  </g>
+</svg>

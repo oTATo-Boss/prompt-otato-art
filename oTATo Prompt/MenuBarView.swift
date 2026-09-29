@@ -12,6 +12,7 @@ struct MenuBarView: View {
     @State private var settledSearch = ""
     @State private var searchTask: Task<Void, Never>?
     @State private var copied = false
+    @State private var hoveredPromptID: UUID?
     @FocusState private var searchFocused: Bool
 
     private var activePrompts: [Prompt] { prompts.filter { $0.deletedAt == nil } }
@@ -181,16 +182,16 @@ struct MenuBarView: View {
             HStack(spacing: 10) {
                 Group {
                     if let cover = PromptPresentation.croppedImage(for: prompt) {
-                        Image(nsImage: cover).resizable().scaledToFill()
+                        Image(nsImage: cover).resizable().scaledToFit()
                     } else {
-                        Image(systemName: prompt.format == .markdown ? "doc.richtext" : "doc.text")
+                        Image(systemName: "doc.richtext")
                             .font(.system(size: 19))
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .background(.quaternary.opacity(0.3))
                     }
                 }
-                .frame(width: 50, height: 42)
+                .frame(width: 56, height: 31.5)
+                .background(.quaternary.opacity(0.3))
                 .clipped()
                 .clipShape(RoundedRectangle(cornerRadius: 6))
                 VStack(alignment: .leading, spacing: 3) {
@@ -212,9 +213,11 @@ struct MenuBarView: View {
             .padding(.horizontal, 8)
             .frame(height: 54)
             .contentShape(RoundedRectangle(cornerRadius: 8))
-            .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8))
+            .background(.quaternary.opacity(hoveredPromptID == prompt.id ? 0.6 : 0.3),
+                        in: RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
+        .onHover { hovering in hoveredPromptID = hovering ? prompt.id : nil }
         .accessibilityLabel("复制 \(prompt.title)")
     }
 

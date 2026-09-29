@@ -1,0 +1,50 @@
+{
+  "fill" : "none",
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "name" : "oTATo black line art",
+          "image-name" : "app-icon-black.png",
+          "opacity-specializations" : [
+            {
+              "value" : 1
+            },
+            {
+              "appearance" : "dark",
+              "value" : 0
+            }
+          ],
+          "glass" : false
+        },
+        {
+          "name" : "oTATo white line art",
+          "image-name" : "app-icon-white.png",
+          "opacity-specializations" : [
+            {
+              "value" : 0
+            },
+            {
+              "appearance" : "dark",
+              "value" : 1
+            }
+          ],
+          "glass" : false
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0
+      },
+      "translucency" : {
+        "enabled" : false,
+        "value" : 0
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "squares" : [
+      "macOS"
+    ]
+  }
+}
