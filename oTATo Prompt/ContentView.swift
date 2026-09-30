@@ -47,7 +47,8 @@ private struct SidebarFolderNode: View {
                     Image(systemName: "folder").frame(width: 16)
                     Text(folder.name).lineLimit(1)
                     Spacer(minLength: 3)
-                    Text(PromptLibrary.directCount(for: folder.id, in: prompts).formatted())
+                    Text(PromptLibrary.folderContents(of: folder.id, prompts: prompts,
+                                                     folders: folders).count.formatted())
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 .font(.system(size: 12.5))
@@ -186,7 +187,8 @@ struct ContentView: View {
             case .recentUse: base = activePrompts.filter { $0.lastUsedAt != nil }
             case .uncategorized: base = activePrompts.filter { $0.folderID == nil }
             case .trash: base = prompts.filter { $0.deletedAt != nil }
-            case .folder(let id): base = activePrompts.filter { $0.folderID == id }
+            case .folder(let id):
+                base = PromptLibrary.folderContents(of: id, prompts: activePrompts, folders: activeFolders)
             }
         }
         if searching { return base }

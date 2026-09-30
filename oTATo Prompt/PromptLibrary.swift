@@ -321,6 +321,16 @@ enum PromptLibrary {
         }
     }
 
+    /// A folder collection includes prompts in all active descendant folders.
+    static func folderContents(of folderID: UUID, prompts: [Prompt], folders: [Folder]) -> [Prompt] {
+        let activeFolders = folders.filter { $0.deletedAt == nil }
+        guard activeFolders.contains(where: { $0.id == folderID }) else { return [] }
+        let ids = descendantIDs(of: folderID, in: activeFolders)
+        return prompts.filter {
+            $0.deletedAt == nil && $0.folderID.map(ids.contains) == true
+        }
+    }
+
     static func directCount(for folderID: UUID?, in prompts: [Prompt]) -> Int {
         prompts.reduce(into: 0) { count, prompt in
             if prompt.deletedAt == nil && prompt.folderID == folderID { count += 1 }
