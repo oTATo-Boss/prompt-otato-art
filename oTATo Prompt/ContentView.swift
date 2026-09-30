@@ -646,6 +646,7 @@ struct ContentView: View {
             .frame(width: 72)
             .fixedSize(horizontal: true, vertical: false)
             .accessibilityLabel("视图方式")
+            sortMenu
             TextField("搜索提示词、标签、内容…", text: $searchText)
                 .textFieldStyle(.plain)
                 .focused($searchFocused)
@@ -693,7 +694,6 @@ struct ContentView: View {
 
     private var tagStrip: some View {
         HStack(spacing: 12) {
-            sortMenu
             NativeTagStrip(filter: $libraryFilter, tags: availableTagOptions)
                 .frame(height: 29)
             Button { showingFilterPanel.toggle() } label: {
