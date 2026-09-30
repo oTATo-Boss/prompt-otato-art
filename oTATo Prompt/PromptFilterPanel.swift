@@ -231,7 +231,7 @@ struct PromptActiveFilterSummary: View {
     var body: some View {
         if filter.isActive {
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
+                LazyHStack(spacing: 6) {
                     Text("筛选")
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
@@ -281,6 +281,7 @@ struct PromptActiveFilterSummary: View {
                 }
                 .padding(.vertical, 3)
             }
+            .frame(height: 30)
         }
     }
 }
@@ -322,6 +323,8 @@ private struct PromptFilterRemovalChip: View {
                 Image(systemName: symbol)
                     .font(.system(size: 8, weight: .medium))
                 Text(title).font(.system(size: 10))
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
                 Image(systemName: "xmark")
                     .font(.system(size: 8, weight: .medium))
                     .foregroundStyle(.secondary)

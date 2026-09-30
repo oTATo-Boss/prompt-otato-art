@@ -105,7 +105,9 @@ private struct LibraryChip: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 11, weight: selected ? .semibold : .regular))
+                .font(.system(size: 11, weight: .medium))
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 5)
                 .foregroundStyle(selected ? accent.selectedForeground : Color.primary)
@@ -714,7 +716,7 @@ struct ContentView: View {
     private var tagStrip: some View {
         HStack(spacing: 12) {
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 7) {
+                LazyHStack(spacing: 7) {
                     chip("全部", selected: libraryFilter.selectedTagIDs.isEmpty &&
                          libraryFilter.excludedTagIDs.isEmpty && libraryFilter.tagPresence == .any) {
                         libraryFilter.clearTags()
@@ -736,6 +738,7 @@ struct ContentView: View {
                 }
                 .padding(.vertical, 2)
             }
+            .frame(height: 29)
             Button { showingFilterPanel.toggle() } label: {
                 HStack(spacing: 5) {
                     Label("筛选", systemImage: "line.3.horizontal.decrease")
