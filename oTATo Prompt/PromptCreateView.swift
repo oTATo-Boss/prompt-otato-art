@@ -17,6 +17,8 @@ struct PromptCreateView: View {
     @State private var tags = ""
     @State private var isFavorite = false
     @State private var coverImage: NSImage?
+    @State private var coverHovering = false
+    @State private var coverDropTargeted = false
     @State private var showCover = false
     @State private var showDiscard = false
     @State private var errorMessage: String?
@@ -107,64 +109,96 @@ struct PromptCreateView: View {
     }
 
     private var metadata: some View {
-        VStack(alignment: .leading, spacing: 11) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text("标题")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.secondary)
-                TextField("输入标题", text: $title)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 21, weight: .semibold))
-                    .padding(.horizontal, 10)
-                    .frame(height: 38)
-                    .background(Color(nsColor: .textBackgroundColor),
-                                in: RoundedRectangle(cornerRadius: 7))
-                    .accessibilityLabel("Prompt 标题")
-            }
-            HStack(alignment: .bottom, spacing: 12) {
+        HStack(alignment: .top, spacing: 20) {
+            VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("保存位置")
+                    Text("标题")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.secondary)
-                    FolderPicker(folders: folders, selection: $folderID)
-                        .labelsHidden()
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .frame(height: 30)
-                }
-                .frame(minWidth: 135, maxWidth: 220, alignment: .leading)
-
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("标签")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.secondary)
-                    TextField("添加标签，用逗号分隔", text: $tags)
+                    TextField("输入标题", text: $title)
                         .textFieldStyle(.plain)
-                        .padding(.horizontal, 9)
-                        .frame(height: 30)
-                        .background(Color(nsColor: .textBackgroundColor),
-                                    in: RoundedRectangle(cornerRadius: 7))
-                        .accessibilityLabel("标签")
+                        .font(.system(size: 21, weight: .semibold))
+                        .frame(height: 38)
+                        .accessibilityLabel("Prompt 标题")
                 }
-                .frame(maxWidth: .infinity)
 
-                Button { showCover.toggle() } label: {
-                    Label(coverImage == nil ? "封面" : "已添加封面", systemImage: "photo")
-                        .frame(height: 30)
-                }
-                .buttonStyle(.bordered)
-                .popover(isPresented: $showCover, arrowEdge: .bottom) { coverPopover }
-                .help("添加或更换封面")
+                HStack(alignment: .top, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("保存位置")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.secondary)
+                        FolderPicker(folders: folders, selection: $folderID)
+                            .labelsHidden()
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(height: 30)
+                    }
+                    .frame(width: 160, alignment: .leading)
 
-                Button { isFavorite.toggle() } label: {
-                    Image(systemName: isFavorite ? "star.fill" : "star")
-                        .frame(width: 22, height: 30)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("标签")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.secondary)
+                        TextField("添加标签，用逗号分隔", text: $tags)
+                            .textFieldStyle(.plain)
+                            .frame(height: 30)
+                            .accessibilityLabel("标签")
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .buttonStyle(.plain)
-                .modifier(EditorHoverSurface())
-                .accessibilityLabel(isFavorite ? "取消收藏" : "创建后加入收藏")
-                .help(isFavorite ? "取消收藏" : "创建后加入收藏")
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: 7) {
+                HStack {
+                    Text("封面")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button { isFavorite.toggle() } label: {
+                        Image(systemName: isFavorite ? "star.fill" : "star")
+                            .frame(width: 18, height: 16)
+                    }
+                    .buttonStyle(.plain)
+                    .modifier(EditorHoverSurface())
+                    .accessibilityLabel(isFavorite ? "取消收藏" : "创建后加入收藏")
+                    .help(isFavorite ? "取消收藏" : "创建后加入收藏")
+                }
+                coverThumbnail
+            }
+            .frame(width: 144)
         }
+    }
+
+    private var coverThumbnail: some View {
+        Button { showCover.toggle() } label: {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.primary.opacity(coverHovering || coverDropTargeted ? 0.065 : 0.025))
+                if let coverImage {
+                    Image(nsImage: coverImage)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 144, height: 81)
+                } else {
+                    Image(systemName: "photo.badge.plus")
+                        .font(.system(size: 22, weight: .regular))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: 144, height: 81)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(Color(nsColor: .separatorColor).opacity(0.55), lineWidth: 0.5)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+        .onHover { coverHovering = $0 }
+        .onDrop(of: [.fileURL, .image], isTargeted: $coverDropTargeted, perform: receiveCover)
+        .popover(isPresented: $showCover, arrowEdge: .bottom) { coverPopover }
+        .accessibilityLabel(coverImage == nil ? "添加封面" : "更换封面")
+        .help("添加或更换封面")
     }
 
     private var formattingToolbar: some View {

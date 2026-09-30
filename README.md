@@ -5,7 +5,7 @@ oTATo prompt 是简体中文 macOS 提示词资料库。提示词和封面保存
 ## 当前交付
 
 - Xcode 工程：`oTATo Prompt.xcodeproj`。最低系统版本为 macOS 14，Bundle ID 为 `art.otato.prompt`。
-- 最新本地测试磁盘映像：`dist/oTATo-prompt-1.0-test-iteration2-universal.dmg`，包含 Apple Silicon 与 Intel 两种架构。该目录不纳入源码仓库。
+- 最新本地测试磁盘映像：`dist/oTATo-prompt-1.0-test-create-header-universal.dmg`，包含 Apple Silicon 与 Intel 两种架构。该目录不纳入源码仓库。
 - 测试版以临时签名制作，尚未经过 Developer ID 签名和 Apple 公证。它用于本地验收，不是正式发行版。
 
 ## 安装和试用测试版
