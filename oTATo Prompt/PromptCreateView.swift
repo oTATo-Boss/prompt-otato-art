@@ -3,7 +3,8 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct PromptCreateView: View {
-    @AppStorage("editorFontSize") private var editorFontSize = 16.0
+    @Environment(\.appAccentStyle) private var accent
+    @AppStorage("editorFontSize") private var editorFontSize = 15.0
     @AppStorage("editorWrapLines") private var editorWrapLines = true
 
     let folders: [Folder]
@@ -36,19 +37,6 @@ struct PromptCreateView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                Button(action: cancel) { Label("返回", systemImage: "chevron.left") }
-                    .buttonStyle(.plain)
-                    .modifier(EditorHoverSurface())
-                Text("新建 Prompt")
-                    .font(.system(size: 15, weight: .semibold))
-                Spacer()
-            }
-            .padding(.leading, titlebarInset)
-            .padding(.trailing, 20)
-            .frame(height: 60)
-            Divider()
-
             VStack(alignment: .leading, spacing: 14) {
                 metadata
                 VStack(alignment: .leading, spacing: 0) {
@@ -73,7 +61,7 @@ struct PromptCreateView: View {
                 .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
                 .overlay {
                     RoundedRectangle(cornerRadius: 10)
-                        .strokeBorder(Color(nsColor: .separatorColor).opacity(0.45), lineWidth: 0.5)
+                        .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.75)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -86,7 +74,7 @@ struct PromptCreateView: View {
                 Button("取消", action: cancel)
                     .frame(minWidth: 80)
                 Button("创建 Prompt", action: create)
-                    .buttonStyle(.borderedProminent)
+                    .appPrimaryAction()
                     .frame(minWidth: 118)
                     .disabled((title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
                                content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) ||
@@ -97,6 +85,15 @@ struct PromptCreateView: View {
             .frame(height: 58)
         }
         .background(Color(nsColor: .windowBackgroundColor))
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                Button(action: cancel) { Label("返回", systemImage: "chevron.left") }
+                    .help("返回资料库")
+            }
+            ToolbarItem(placement: .principal) {
+                Text("新建 Prompt").font(.headline)
+            }
+        }
         .confirmationDialog("放弃新建 Prompt？", isPresented: $showDiscard) {
             Button("放弃更改", role: .destructive, action: onCancel)
             Button("继续编辑", role: .cancel) {}
@@ -156,6 +153,7 @@ struct PromptCreateView: View {
                     Spacer()
                     Button { isFavorite.toggle() } label: {
                         Image(systemName: isFavorite ? "star.fill" : "star")
+                            .foregroundStyle(isFavorite ? accent.actionForeground : Color.primary)
                             .frame(width: 18, height: 16)
                     }
                     .buttonStyle(.plain)
@@ -189,7 +187,7 @@ struct PromptCreateView: View {
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .overlay {
                 RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(Color(nsColor: .separatorColor).opacity(0.55), lineWidth: 0.5)
+                    .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.75)
             }
             .contentShape(RoundedRectangle(cornerRadius: 8))
         }
@@ -242,7 +240,7 @@ struct PromptCreateView: View {
                     Button("移除", role: .destructive) { coverImage = nil }
                 }
             }
-            .buttonStyle(.bordered)
+            .appSecondaryAction()
         }
         .padding(16)
         .frame(width: 330)

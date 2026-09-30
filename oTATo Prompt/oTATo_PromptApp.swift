@@ -5,22 +5,15 @@
 //  Created by Griffith on 2026/9/28.
 //
 
+import AppKit
+import Combine
 import SwiftData
 import SwiftUI
 
 @main
 struct oTATo_PromptApp: App {
-    @AppStorage("appearanceMode") private var appearanceMode = "system"
     private let app: AppCoordinator
     private let launchError: String?
-
-    private var colorScheme: ColorScheme? {
-        switch appearanceMode {
-        case "light": .light
-        case "dark": .dark
-        default: nil
-        }
-    }
 
     init() {
         do {
@@ -73,7 +66,7 @@ struct oTATo_PromptApp: App {
             MenuBarView()
                 .environmentObject(app)
                 .modelContainer(app.container)
-                .preferredColorScheme(colorScheme)
+                .modifier(AppAppearanceModifier())
                 .applyAppAccent()
         }
         .menuBarExtraStyle(.window)
@@ -82,7 +75,7 @@ struct oTATo_PromptApp: App {
             AppSettingsView()
                 .environmentObject(app)
                 .modelContainer(app.container)
-                .preferredColorScheme(colorScheme)
+                .modifier(AppAppearanceModifier())
                 .applyAppAccent()
         }
     }
@@ -90,27 +83,47 @@ struct oTATo_PromptApp: App {
 
 private struct RootWindowView: View {
     @Environment(\.openWindow) private var openWindow
-    @AppStorage("appearanceMode") private var appearanceMode = "system"
     @ObservedObject var app: AppCoordinator
-
-    private var colorScheme: ColorScheme? {
-        switch appearanceMode {
-        case "light": .light
-        case "dark": .dark
-        default: nil
-        }
-    }
 
     var body: some View {
         ContentView()
             .environmentObject(app)
             .frame(minWidth: 900, minHeight: 620)
-            .preferredColorScheme(colorScheme)
+            .modifier(AppAppearanceModifier())
             .applyAppAccent()
             .onAppear {
                 app.openWindowAction = { openWindow(id: "main") }
                 app.start()
             }
+    }
+}
+
+private struct AppAppearanceModifier: ViewModifier {
+    @AppStorage("appearanceMode") private var appearanceMode = "system"
+    @State private var systemColorScheme = currentSystemColorScheme()
+
+    private var colorScheme: ColorScheme {
+        switch appearanceMode {
+        case "light": .light
+        case "dark": .dark
+        default: systemColorScheme
+        }
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .preferredColorScheme(colorScheme)
+            .onAppear { systemColorScheme = Self.currentSystemColorScheme() }
+            .onReceive(DistributedNotificationCenter.default()
+                .publisher(for: Notification.Name("AppleInterfaceThemeChangedNotification"))
+                .receive(on: RunLoop.main)) { _ in
+                    systemColorScheme = Self.currentSystemColorScheme()
+                }
+    }
+
+    private static func currentSystemColorScheme() -> ColorScheme {
+        NSApplication.shared.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? .dark : .light
     }
 }
 

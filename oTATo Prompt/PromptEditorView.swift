@@ -4,18 +4,17 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct PromptEditorView: View {
+    @Environment(\.appAccentStyle) private var accent
     @Environment(\.modelContext) private var context
-    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var app: AppCoordinator
-    @AppStorage("editorFontSize") private var editorFontSize = 16.0
+    @AppStorage("editorFontSize") private var editorFontSize = 15.0
     @AppStorage("editorWrapLines") private var editorWrapLines = true
 
     let prompt: Prompt
     let folders: [Folder]
     let titlebarInset: CGFloat
     let onBack: () -> Void
-    let onCopy: () -> Void
-    let onExport: () -> Void
+    let onExport: (String, String) -> Void
     let onError: (String) -> Void
 
     @State private var title: String
@@ -25,8 +24,9 @@ struct PromptEditorView: View {
     @State private var pendingTag = ""
     @State private var addingTag = false
     @State private var favorite: Bool
+    @State private var coverImage: NSImage?
+    @State private var coverChanged = false
     @State private var showInspector = false
-    @State private var saveTask: Task<Void, Never>?
     @State private var saveError: String?
     @State private var editorCommand: EditorCommand?
     @State private var openedLibraryRevision: Int?
@@ -35,13 +35,12 @@ struct PromptEditorView: View {
 
     init(prompt: Prompt, folders: [Folder], titlebarInset: CGFloat = 20,
          onBack: @escaping () -> Void,
-         onCopy: @escaping () -> Void, onExport: @escaping () -> Void,
+         onExport: @escaping (String, String) -> Void,
          onError: @escaping (String) -> Void) {
         self.prompt = prompt
         self.folders = folders
         self.titlebarInset = titlebarInset
         self.onBack = onBack
-        self.onCopy = onCopy
         self.onExport = onExport
         self.onError = onError
         _title = State(initialValue: prompt.title)
@@ -49,45 +48,41 @@ struct PromptEditorView: View {
         _folderID = State(initialValue: prompt.folderID)
         _tagInput = State(initialValue: prompt.tagNames.joined(separator: ", "))
         _favorite = State(initialValue: prompt.isFavorite)
+        _coverImage = State(initialValue: PromptPresentation.croppedImage(for: prompt))
     }
 
     var body: some View {
         GeometryReader { geometry in
             let wide = geometry.size.width >= 840
-            VStack(spacing: 0) {
-                HStack(spacing: 12) {
-                Button {
-                    if flush(finalizeTitle: true) { onBack() }
-                } label: { Label("返回", systemImage: "chevron.left") }
-                .buttonStyle(.plain)
-                .modifier(EditorHoverSurface())
-                    Spacer()
-                    if !wide {
+            HStack(spacing: 0) {
+                editorPane
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                if wide {
+                    Divider()
+                    inspector.frame(width: 270)
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .navigation) {
+                    Button(action: onBack) { Label("返回", systemImage: "chevron.left") }
+                        .help("返回资料库")
+                }
+                if #available(macOS 26.0, *) {
+                    ToolbarSpacer(.flexible, placement: .primaryAction)
+                }
+                if !wide {
+                    ToolbarItem(placement: .primaryAction) {
                         Button { showInspector.toggle() } label: {
                             Label("详情", systemImage: "sidebar.right")
                         }
-                        .buttonStyle(.bordered)
                         .popover(isPresented: $showInspector, arrowEdge: .bottom) {
                             inspector.frame(width: 290, height: 490)
                         }
                     }
-                    Button(action: copyCurrent) {
-                        Label("复制 Prompt", systemImage: "doc.on.doc")
-                    }
-                    .buttonStyle(.borderedProminent)
                 }
-                .padding(.leading, titlebarInset)
-                .padding(.trailing, 20)
-                .frame(height: 60)
-                Divider()
-
-                HStack(spacing: 0) {
-                    editorPane
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    if wide {
-                        Divider()
-                        inspector.frame(width: 270)
-                    }
+                ToolbarItem(placement: .confirmationAction) {
+                    saveButton
+                        .keyboardShortcut("s", modifiers: .command)
                 }
             }
         }
@@ -95,23 +90,12 @@ struct PromptEditorView: View {
         .onAppear {
             openedLibraryRevision = app.libraryRevision
             app.selectedPromptID = prompt.id
-            app.installEditorFlush(owner: editorSessionID) { flush(finalizeTitle: true) }
+            app.installEditorActions(owner: editorSessionID, copy: copyCurrent,
+                                     toggleFavorite: { favorite.toggle() })
         }
         .onDisappear {
-            saveTask?.cancel()
-            if openedLibraryRevision == app.libraryRevision && prompt.deletedAt == nil {
-                _ = flush(finalizeTitle: true)
-            }
-            app.clearEditorFlush(owner: editorSessionID)
+            app.clearEditorActions(owner: editorSessionID)
         }
-        .onChange(of: scenePhase) { _, phase in
-            if phase != .active { saveTask?.cancel(); _ = flush(finalizeTitle: true) }
-        }
-        .onChange(of: title) { _, _ in scheduleSave() }
-        .onChange(of: content) { _, _ in scheduleSave() }
-        .onChange(of: folderID) { _, _ in scheduleSave() }
-        .onChange(of: tagInput) { _, _ in scheduleSave() }
-        .onChange(of: favorite) { _, _ in scheduleSave() }
         .onChange(of: prompt.isFavorite) { _, value in
             if favorite != value { favorite = value }
         }
@@ -120,6 +104,16 @@ struct PromptEditorView: View {
         }
         .onChange(of: prompt.tagNames) { _, value in
             if Set(parsedTags) != Set(value) { tagInput = value.joined(separator: ", ") }
+        }
+    }
+
+    @ViewBuilder
+    private var saveButton: some View {
+        if #available(macOS 26.0, *) {
+            Button("保存", role: .confirm, action: saveCurrent)
+        } else {
+            Button("保存", action: saveCurrent)
+                .buttonStyle(.borderedProminent)
         }
     }
 
@@ -141,7 +135,7 @@ struct PromptEditorView: View {
                                     .font(.system(size: 11))
                                     .padding(.horizontal, 8)
                                     .padding(.vertical, 4)
-                                    .background(Color.primary.opacity(0.06), in: Capsule())
+                                    .background(accent.controlFill, in: Capsule())
                             }
                         }
                     }
@@ -166,7 +160,7 @@ struct PromptEditorView: View {
                         Image(systemName: "exclamationmark.triangle.fill")
                         Text("保存失败：\(saveError)")
                         Spacer()
-                        Button("重试") { _ = flush(finalizeTitle: false) }
+                        Button("重试", action: saveCurrent)
                     }
                     .font(.caption)
                     .foregroundStyle(.red)
@@ -177,7 +171,7 @@ struct PromptEditorView: View {
             .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 9))
             .overlay {
                 RoundedRectangle(cornerRadius: 9)
-                    .strokeBorder(Color(nsColor: .separatorColor).opacity(0.45), lineWidth: 0.5)
+                    .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.75)
             }
             .padding(.horizontal, 20)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -187,14 +181,14 @@ struct PromptEditorView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
-                Button {
-                    if flush(finalizeTitle: true) { onExport() }
-                } label: { Label("导出…", systemImage: "square.and.arrow.up") }
-                .buttonStyle(.bordered)
+                Button { onExport(title, content) } label: {
+                    Label("导出…", systemImage: "square.and.arrow.up")
+                }
+                .appSecondaryAction()
                 Button(action: copyCurrent) {
                     Label("复制 Prompt", systemImage: "doc.on.doc")
                 }
-                .buttonStyle(.borderedProminent)
+                .appPrimaryAction()
             }
             .padding(.horizontal, 20)
             .frame(height: 58)
@@ -233,17 +227,17 @@ struct PromptEditorView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 17) {
                 Text("封面").font(.system(size: 12, weight: .semibold))
-                CoverPreview(image: PromptPresentation.croppedImage(for: prompt))
+                CoverPreview(image: coverImage)
                     .aspectRatio(16 / 9, contentMode: .fit)
                     .onDrop(of: [.fileURL, .image], isTargeted: nil, perform: receiveCover)
                 HStack(spacing: 6) {
-                    Button(prompt.coverPath == nil ? "添加封面" : "更换封面", action: chooseCover)
+                    Button(coverImage == nil ? "添加封面" : "更换封面", action: chooseCover)
                     Button("粘贴", action: pasteCover)
-                    if prompt.coverPath != nil {
+                    if coverImage != nil {
                         Button("移除", role: .destructive) { removeCover() }
                     }
                 }
-                .buttonStyle(.bordered)
+                .appSecondaryAction()
                 Divider()
                 Text("标签").font(.system(size: 12, weight: .semibold))
                 if !parsedTags.isEmpty {
@@ -255,7 +249,7 @@ struct PromptEditorView: View {
                                     .font(.system(size: 11))
                                     .padding(.horizontal, 8)
                                     .padding(.vertical, 5)
-                                    .background(Color.primary.opacity(0.07), in: Capsule())
+                                    .background(accent.controlFill, in: Capsule())
                             }
                             .buttonStyle(.plain)
                             .modifier(EditorHoverSurface())
@@ -279,7 +273,7 @@ struct PromptEditorView: View {
                         addingTag = true
                         pendingTagFocused = true
                     } label: { Label("添加标签", systemImage: "plus") }
-                    .buttonStyle(.bordered)
+                    .appSecondaryAction()
                     .disabled(parsedTags.count >= 10)
                 }
                 Divider()
@@ -329,47 +323,51 @@ struct PromptEditorView: View {
         addingTag = false
     }
 
-    private func scheduleSave() {
-        saveTask?.cancel()
-        saveTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(400))
-            if !Task.isCancelled { _ = flush(finalizeTitle: false) }
-        }
+    private func saveCurrent() {
+        if saveDraft() { onBack() }
     }
 
     @discardableResult
-    private func flush(finalizeTitle: Bool) -> Bool {
+    private func saveDraft() -> Bool {
         guard prompt.deletedAt == nil,
               openedLibraryRevision == app.libraryRevision else { return false }
+        var stored: StoredCover?
         do {
             let resolved: String
-            if finalizeTitle && title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 resolved = (try? PromptLibrary.resolvedTitle(title, content: content)) ?? "未命名 Prompt"
             } else {
                 resolved = title
             }
             let edited = prompt.title != resolved || prompt.content != content ||
                 prompt.folderID != folderID ||
-                Set(prompt.tagNames) != Set(parsedTags)
+                Set(prompt.tagNames) != Set(parsedTags) || coverChanged
             guard edited || prompt.isFavorite != favorite else { saveError = nil; return true }
+            if coverChanged, let coverImage {
+                stored = try PromptStorage.saveCoverAsset(image: coverImage)
+            }
             prompt.title = resolved
             prompt.content = content
             prompt.folderID = folderID
             prompt.isFavorite = favorite
-            try PromptLibrary.setTags(parsedTags, for: prompt, in: context)
+            try PromptLibrary.setTags(parsedTags, for: prompt, in: context, save: false)
+            if coverChanged {
+                try PromptLibrary.setCover(stored, crop: .full, for: prompt, in: context, save: false)
+            }
             if edited { prompt.updatedAt = .now }
             try context.save()
             saveError = nil
             return true
         } catch {
             context.rollback()
+            if let stored { try? PromptStorage.removeCover(at: stored.relativePath) }
             saveError = error.localizedDescription
             return false
         }
     }
 
     private func copyCurrent() {
-        if flush(finalizeTitle: true) { onCopy() }
+        app.requestCopy(prompt, content: content)
     }
 
     private func chooseCover() {
@@ -389,15 +387,13 @@ struct PromptEditorView: View {
     }
 
     private func replaceCover(with image: NSImage) {
-        do {
-            let stored = try PromptStorage.saveCoverAsset(image: image)
-            try PromptLibrary.setCover(stored, crop: .full, for: prompt, in: context)
-        } catch { onError(error.localizedDescription) }
+        coverImage = image
+        coverChanged = true
     }
 
     private func removeCover() {
-        do { try PromptLibrary.setCover(nil, for: prompt, in: context) }
-        catch { onError(error.localizedDescription) }
+        coverImage = nil
+        coverChanged = true
     }
 
     private func receiveCover(_ providers: [NSItemProvider]) -> Bool {
@@ -418,12 +414,14 @@ struct PromptEditorView: View {
 }
 
 struct EditorHoverSurface: ViewModifier {
+    @Environment(\.appAccentStyle) private var accent
     @State private var hovering = false
 
     func body(content: Content) -> some View {
         content
+            .foregroundStyle(.primary)
             .padding(.horizontal, 5)
-            .background(Color.primary.opacity(hovering ? 0.065 : 0),
+            .background(hovering ? accent.hoverFill : Color.clear,
                         in: RoundedRectangle(cornerRadius: 6))
             .onHover { hovering = $0 }
     }
@@ -441,6 +439,7 @@ struct FolderPicker: View {
             }
         }
         .pickerStyle(.menu)
+        .tint(.primary)
     }
 
     private func path(for folder: Folder) -> String {
@@ -481,7 +480,7 @@ struct CoverPreview: View {
         .clipShape(RoundedRectangle(cornerRadius: 7))
         .overlay {
             RoundedRectangle(cornerRadius: 7)
-                .strokeBorder(Color(nsColor: .separatorColor).opacity(0.55), lineWidth: 0.5)
+                .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.75)
         }
         .accessibilityLabel(image == nil ? "未添加封面" : "封面图片")
     }

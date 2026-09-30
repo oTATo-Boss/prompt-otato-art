@@ -5,8 +5,51 @@ import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
 
+private enum SettingsPane: String, CaseIterable, Identifiable {
+    case general, shortcuts, appearance, editor, data, about
+
+    var id: Self { self }
+    var title: String {
+        switch self {
+        case .general: "通用"
+        case .shortcuts: "快捷键"
+        case .appearance: "外观"
+        case .editor: "编辑器"
+        case .data: "数据"
+        case .about: "关于"
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .general: "gearshape"
+        case .shortcuts: "keyboard"
+        case .appearance: "paintpalette"
+        case .editor: "textformat"
+        case .data: "externaldrive"
+        case .about: "info.circle"
+        }
+    }
+
+    var navigationImage: NSImage {
+        let image = NSImage(size: NSSize(width: 32, height: 32), flipped: false) { _ in
+            guard let symbolImage = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) else {
+                return false
+            }
+            let size = symbolImage.size
+            let scale = 20 / max(size.width, size.height)
+            let fittedSize = NSSize(width: size.width * scale, height: size.height * scale)
+            symbolImage.draw(in: NSRect(
+                x: (32 - fittedSize.width) / 2, y: (32 - fittedSize.height) / 2,
+                width: fittedSize.width, height: fittedSize.height
+            ))
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
+}
+
 struct AppSettingsView: View {
-    let titlebarInset: CGFloat
     @EnvironmentObject private var app: AppCoordinator
     @Environment(\.modelContext) private var modelContext
     @Query private var prompts: [Prompt]
@@ -16,7 +59,7 @@ struct AppSettingsView: View {
     @AppStorage("appearanceMode") private var appearanceMode = "system"
     @AppStorage("accentPalette") private var accentPalette = AppAccentPalette.monochrome.rawValue
     @AppStorage("cardSize") private var cardSize = "standard"
-    @AppStorage("editorFontSize") private var editorFontSize = 16.0
+    @AppStorage("editorFontSize") private var editorFontSize = 15.0
     @AppStorage("editorWrapLines") private var editorWrapLines = true
     @AppStorage("globalHotkeyDisplay") private var hotkeyDisplay = "⌥ Space"
     @AppStorage("globalSearchDefaultCollection") private var globalSearchDefaultCollection = GlobalSearchDefaultCollection.favorites.rawValue
@@ -29,45 +72,30 @@ struct AppSettingsView: View {
     @State private var pendingRestoreURL: URL?
     @State private var pendingRestoreSummary: ArchiveSummary?
     @State private var showRestoreConfirmation = false
-
-    init(titlebarInset: CGFloat = 24) {
-        self.titlebarInset = titlebarInset
-    }
+    @State private var selectedPane = SettingsPane.general
 
     var body: some View {
-        GeometryReader { geometry in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("设置")
-                            .font(.system(size: 25, weight: .semibold))
-                        Text("个性化设置，让创作更高效")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.bottom, 4)
-                    .padding(.leading, max(0, titlebarInset - 24))
-
-                    LazyVGrid(columns: gridColumns(for: geometry.size.width),
-                              alignment: .leading, spacing: 14) {
-                        generalCard
-                        shortcutCard
-                        appearanceCard
-                        editorCard
-                        dataCard
-                        aboutCard
+        TabView(selection: $selectedPane) {
+            ForEach(SettingsPane.allCases) { pane in
+                ScrollView {
+                    paneContent(pane)
+                        .padding(24)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
+                .tabItem {
+                    Label {
+                        Text(pane.title)
+                    } icon: {
+                        Image(nsImage: pane.navigationImage)
                     }
                 }
-                .padding(.horizontal, 24)
-                .padding(.top, 26)
-                .padding(.bottom, 24)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .tag(pane)
             }
-            .scrollIndicators(.automatic)
         }
-        .frame(minWidth: 650, minHeight: 580)
+        .frame(width: 650, height: 420)
         .background(Color(nsColor: .windowBackgroundColor))
         .onAppear { launchAtLogin = SMAppService.mainApp.status == .enabled }
+        .onChange(of: selectedPane) { _, _ in hotkeyRecorder.stop() }
         .onDisappear { hotkeyRecorder.stop() }
         .alert("替换当前资料库？", isPresented: $showRestoreConfirmation) {
             Button("替换并恢复", role: .destructive) { restoreConfirmedArchive() }
@@ -88,9 +116,16 @@ struct AppSettingsView: View {
         }
     }
 
-    private func gridColumns(for width: CGFloat) -> [GridItem] {
-        Array(repeating: GridItem(.flexible(), spacing: 14, alignment: .top),
-              count: width >= 850 ? 2 : 1)
+    @ViewBuilder
+    private func paneContent(_ pane: SettingsPane) -> some View {
+        switch pane {
+        case .general: generalCard
+        case .shortcuts: shortcutCard
+        case .appearance: appearanceCard
+        case .editor: editorCard
+        case .data: dataCard
+        case .about: aboutCard
+        }
     }
 
     private func settingsCard<Content: View>(
@@ -112,7 +147,7 @@ struct AppSettingsView: View {
                     in: RoundedRectangle(cornerRadius: 13))
         .overlay {
             RoundedRectangle(cornerRadius: 13)
-                .strokeBorder(Color(nsColor: .separatorColor).opacity(0.42), lineWidth: 0.5)
+                .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.75)
         }
     }
 
@@ -161,14 +196,6 @@ struct AppSettingsView: View {
                     .toggleStyle(.switch)
                     .help("关闭后不在菜单栏驻留")
             }
-            Divider().padding(.leading, 35)
-            settingsRow("自动保存", symbol: "square.and.arrow.down",
-                        subtitle: "编辑内容时自动保存") {
-                Label("始终开启", systemImage: "checkmark.circle.fill")
-                    .labelStyle(.titleAndIcon)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            }
             if let loginFeedback {
                 Text(loginFeedback)
                     .font(.caption)
@@ -189,7 +216,7 @@ struct AppSettingsView: View {
                     }
                 }
                 .font(.system(size: 11, design: .monospaced))
-                .buttonStyle(.bordered)
+                .appSecondaryAction()
                 .disabled(hotkeyRecorder.isRecording)
                 .accessibilityLabel("重新录入全局搜索快捷键，当前为 \(hotkeyDisplay)")
                 .help("录入时按 Esc 取消；请包含 Command、Option 或 Control。")
@@ -317,19 +344,19 @@ struct AppSettingsView: View {
                     NSWorkspace.shared.activateFileViewerSelecting(
                         [PromptStorage.applicationSupportURL])
                 }
-                .buttonStyle(.bordered)
+                .appSecondaryAction()
             }
             Divider().padding(.leading, 35)
             settingsRow("导入 .md / .txt", symbol: "square.and.arrow.down",
                         subtitle: "从本地文件导入提示词") {
                 Button("导入", action: importTextFiles)
-                    .buttonStyle(.bordered)
+                    .appSecondaryAction()
             }
             Divider().padding(.leading, 35)
             settingsRow("导出全部", symbol: "square.and.arrow.up",
                         subtitle: "按文件夹结构导出 Markdown 文件") {
                 Button("导出", action: exportAllTextFiles)
-                    .buttonStyle(.bordered)
+                    .appSecondaryAction()
             }
             Divider().padding(.leading, 35)
             settingsRow("完整资料库", symbol: "externaldrive",
@@ -339,6 +366,7 @@ struct AppSettingsView: View {
                     Button("从备份恢复…", action: chooseArchiveToRestore)
                 }
                 .menuStyle(.borderlessButton)
+                .tint(.primary)
                 .frame(width: 106)
             }
             if let dataFeedback {
@@ -380,7 +408,7 @@ struct AppSettingsView: View {
                         subtitle: app.updater.canCheckForUpdates
                         ? "从 oTATo 更新源检查版本" : "正式发布版启用") {
                 Button("检查更新") { app.updater.checkForUpdates() }
-                    .buttonStyle(.bordered)
+                    .appSecondaryAction()
                     .disabled(!app.updater.canCheckForUpdates)
             }
         }

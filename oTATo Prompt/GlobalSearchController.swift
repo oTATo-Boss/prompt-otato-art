@@ -486,20 +486,20 @@ private struct GlobalSearchView: View {
                             .lineLimit(1)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 3)
-                            .background(.primary.opacity(0.075), in: Capsule())
+                            .background(accent.controlFill, in: Capsule())
                     }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Image(systemName: "doc.on.doc")
                 .font(.system(size: 17))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary)
                 .frame(width: 29)
                 .accessibilityHidden(true)
         }
         .padding(.horizontal, 12)
         .frame(height: 79)
-        .background(selected ? accent.softSelection : hovered ? Color.primary.opacity(0.055) : Color.clear,
+        .background(selected ? accent.softSelection : hovered ? accent.hoverFill : Color.clear,
                     in: RoundedRectangle(cornerRadius: 11))
         .contentShape(RoundedRectangle(cornerRadius: 11))
     }

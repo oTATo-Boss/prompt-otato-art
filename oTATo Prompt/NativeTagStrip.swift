@@ -76,6 +76,8 @@ struct NativeTagStrip: NSViewRepresentable {
                 button.selectedFill = NSColor(accent.selectedFill)
                 button.selectedText = NSColor(accent.selectedForeground)
                 button.focusColor = NSColor(accent.tint)
+                button.neutralFill = NSColor(accent.controlFill)
+                button.hoverFill = NSColor(accent.hoverFill)
                 button.setAccessibilityValue(excluded ? "已排除" : button.selected ? "已选择" : "未选择")
                 if let menuItem = button.menu?.items.first {
                     menuItem.title = excluded ? "取消排除此标签" : "排除此标签"
@@ -152,6 +154,8 @@ private final class NativeTagButton: NSButton {
     var selectedFill = NSColor.labelColor
     var selectedText = NSColor.textBackgroundColor
     var focusColor = NSColor.controlAccentColor
+    var neutralFill = NSColor.unemphasizedSelectedContentBackgroundColor.withAlphaComponent(0.40)
+    var hoverFill = NSColor.unemphasizedSelectedContentBackgroundColor.withAlphaComponent(0.65)
     private var hovering = false
     private var hoverTracking: NSTrackingArea?
 
@@ -170,7 +174,7 @@ private final class NativeTagButton: NSButton {
 
     override func draw(_ dirtyRect: NSRect) {
         let capsule = NSBezierPath(roundedRect: bounds, xRadius: bounds.height / 2, yRadius: bounds.height / 2)
-        (selected ? selectedFill : NSColor.labelColor.withAlphaComponent(hovering ? 0.11 : 0.06)).setFill()
+        (selected ? selectedFill : hovering ? hoverFill : neutralFill).setFill()
         capsule.fill()
         let text = NSAttributedString(string: title, attributes: [
             .font: tagFont,

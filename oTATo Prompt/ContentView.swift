@@ -27,6 +27,7 @@ private struct SidebarFolderNode: View {
     let onSelect: (Folder) -> Void
     let onNewChild: (Folder) -> Void
     let onRename: (Folder) -> Void
+    let onExport: (Folder) -> Void
     let onDelete: (Folder) -> Void
     let onDropItems: ([NSItemProvider], UUID) -> Bool
     @State private var expanded = true
@@ -38,7 +39,7 @@ private struct SidebarFolderNode: View {
                 SidebarFolderNode(folder: child, folders: folders, prompts: prompts,
                                   selectedID: selectedID, depth: depth + 1,
                                   onSelect: onSelect, onNewChild: onNewChild,
-                                  onRename: onRename, onDelete: onDelete,
+                                  onRename: onRename, onExport: onExport, onDelete: onDelete,
                                   onDropItems: onDropItems)
             }
         } label: {
@@ -60,6 +61,7 @@ private struct SidebarFolderNode: View {
             .contextMenu {
                 Button("新建子文件夹") { onNewChild(folder) }
                 Button("重命名") { onRename(folder) }
+                Button("导出集合…") { onExport(folder) }
                 Button("删除文件夹", role: .destructive) { onDelete(folder) }
             }
             .onDrag { NSItemProvider(object: "folder:\(folder.id.uuidString)" as NSString) }
@@ -74,6 +76,47 @@ private struct LibraryWidthKey: PreferenceKey {
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
 
+private struct SearchFocusBoundary: NSViewRepresentable {
+    let isFocused: Bool
+    let onOutsideClick: () -> Void
+
+    func makeNSView(context: Context) -> SearchFocusBoundaryView {
+        SearchFocusBoundaryView()
+    }
+
+    func updateNSView(_ view: SearchFocusBoundaryView, context: Context) {
+        view.isFocused = isFocused
+        view.onOutsideClick = onOutsideClick
+    }
+}
+
+private final class SearchFocusBoundaryView: NSView {
+    var isFocused = false
+    var onOutsideClick: () -> Void = {}
+    private var mouseMonitor: Any?
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let mouseMonitor { NSEvent.removeMonitor(mouseMonitor) }
+        mouseMonitor = nil
+        guard window != nil else { return }
+        mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            guard let self, self.isFocused, event.window === self.window,
+                  !self.bounds.contains(self.convert(event.locationInWindow, from: nil)) else { return event }
+            // Release the field editor before the click reaches its new target.
+            self.window?.makeFirstResponder(nil)
+            self.onOutsideClick()
+            return event
+        }
+    }
+
+    deinit {
+        if let mouseMonitor { NSEvent.removeMonitor(mouseMonitor) }
+    }
+}
+
 private struct SubtleHoverSurface: ViewModifier {
     @Environment(\.appAccentStyle) private var accent
     @State private var isHovering = false
@@ -83,9 +126,34 @@ private struct SubtleHoverSurface: ViewModifier {
     func body(content: Content) -> some View {
         content
             .background(selected ? accent.softSelection
-                        : isHovering ? Color.primary.opacity(0.055) : Color.clear,
+                        : isHovering ? accent.hoverFill : Color.clear,
                         in: RoundedRectangle(cornerRadius: cornerRadius))
             .onHover { isHovering = $0 }
+    }
+}
+
+private struct LibrarySearchSurface: ViewModifier {
+    @Environment(\.appAccentStyle) private var accent
+    let isFocused: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content
+                .glassEffect(.regular, in: Capsule())
+                .overlay {
+                    if isFocused {
+                        Capsule().strokeBorder(accent.focusOutline, lineWidth: 0.75)
+                    }
+                }
+        } else {
+            content
+                .background(accent.controlFill, in: Capsule())
+                .overlay {
+                    Capsule().strokeBorder(isFocused ? accent.focusOutline
+                        : Color(nsColor: .separatorColor), lineWidth: 0.75)
+                }
+        }
     }
 }
 
@@ -106,7 +174,7 @@ private struct LibraryChip: View {
                 .padding(.vertical, 5)
                 .foregroundStyle(selected ? accent.selectedForeground : Color.primary)
                 .background(selected ? accent.selectedFill
-                            : Color.primary.opacity(isHovering ? 0.11 : 0.06), in: Capsule())
+                            : isHovering ? accent.hoverFill : accent.controlFill, in: Capsule())
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
@@ -132,7 +200,6 @@ struct ContentView: View {
     @State private var selectedPromptID: UUID?
     @State private var editingID: UUID?
     @State private var creating = false
-    @State private var showingSettings = false
     @State private var searchText = ""
     @State private var settledSearch = ""
     @State private var searchScope: PromptSearch.Scope = .all
@@ -222,9 +289,7 @@ struct ContentView: View {
             sidebar.navigationSplitViewColumnWidth(min: 220, ideal: 240, max: 280)
         } detail: {
             Group {
-                if showingSettings {
-                    AppSettingsView(titlebarInset: detailHeaderInset)
-                } else if creating {
+                if creating {
                     PromptCreateView(folders: activeFolders, initialFolderID: selectedFolderID,
                                      titlebarInset: detailHeaderInset,
                                      onCreate: createPrompt, onCancel: { creating = false })
@@ -233,8 +298,7 @@ struct ContentView: View {
                     PromptEditorView(prompt: prompt, folders: activeFolders,
                                      titlebarInset: detailHeaderInset,
                                      onBack: { editingID = nil },
-                                     onCopy: { app.requestCopy(prompt) },
-                                     onExport: { export(prompt) },
+                                     onExport: { export(prompt, title: $0, content: $1) },
                                      onError: { errorMessage = $0 })
                         .id(prompt.id)
                 } else {
@@ -305,7 +369,6 @@ struct ContentView: View {
         }
         .onChange(of: app.openPromptID) { _, id in
             guard let id, prompts.contains(where: { $0.id == id }) else { return }
-            showingSettings = false
             creating = false
             editingID = id
             app.openPromptID = nil
@@ -354,7 +417,6 @@ struct ContentView: View {
 
     private func handleInitialRequests() {
         if let id = app.openPromptID, prompts.contains(where: { $0.id == id }) {
-            showingSettings = false
             creating = false
             editingID = id
             app.openPromptID = nil
@@ -372,15 +434,6 @@ struct ContentView: View {
 
     private var sidebar: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Image("BrandMark").resizable().renderingMode(.template)
-                    .frame(width: 30, height: 30)
-                    .accessibilityHidden(true)
-                Text("oTATo prompt").font(.system(size: 15, weight: .semibold))
-                Spacer()
-            }
-            .padding(.horizontal, 15).frame(height: 52)
-            .padding(.top, 20)
             ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
                     sidebarRow("所有提示词", "square.grid.2x2", activePrompts.count, .all)
@@ -414,6 +467,7 @@ struct ContentView: View {
                                 newFolderParent = $0.id; newFolderName = ""; showNewFolder = true
                             },
                             onRename: { folderToRename = $0; renameText = $0.name },
+                            onExport: exportCollection,
                             onDelete: { folderToDelete = $0 },
                             onDropItems: { receiveMove($0, into: $1) }
                         )
@@ -426,23 +480,18 @@ struct ContentView: View {
                 }
                 .padding(.horizontal, 8).padding(.bottom, 16)
             }
-            Divider()
-            Button {
-                showingSettings = true
-                creating = false
-                editingID = nil
-                selectedPromptID = nil
-                searchText = ""
-                settledSearch = ""
-            } label: {
-                Label("设置", systemImage: "gearshape")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 14).padding(.vertical, 10)
-                    .modifier(SubtleHoverSurface(selected: showingSettings))
+            .appScrollEdge()
+            .appTopBar {
+                HStack(spacing: 8) {
+                    Image("BrandMark").resizable().renderingMode(.template)
+                        .frame(width: 30, height: 30)
+                        .accessibilityHidden(true)
+                    Text("oTATo prompt").font(.system(size: 15, weight: .semibold))
+                    Spacer()
+                }
+                .padding(.horizontal, 15).frame(height: 44)
             }
-            .buttonStyle(.plain).accessibilityLabel("打开设置")
         }
-        .background(.regularMaterial)
     }
 
     private func sidebarRow(_ title: String, _ symbol: String, _ count: Int,
@@ -458,7 +507,7 @@ struct ContentView: View {
             .padding(.horizontal, 9).frame(height: 28)
             .contentShape(Rectangle())
             .modifier(SubtleHoverSurface(
-                selected: collection == target && !searching && !showingSettings))
+                selected: collection == target && !searching))
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(title)，\(count) 个提示词")
@@ -466,15 +515,6 @@ struct ContentView: View {
 
     private var library: some View {
         VStack(spacing: 0) {
-            header
-            if searching { searchScopes }
-            tagStrip
-            if libraryFilter.isActive {
-                PromptActiveFilterSummary(filter: $libraryFilter, tags: availableTagOptions)
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 8)
-            }
-            Divider()
             if shownPrompts.isEmpty && (collection != .trash || searching || libraryFilter.isActive || trashedFolderRoots.isEmpty) { emptyState }
             else {
                 ScrollView {
@@ -512,6 +552,7 @@ struct ContentView: View {
                         .padding(.bottom, 20)
                     }
                 }
+                .appScrollEdge()
                 .focusable().focused($libraryFocused)
                 .focusEffectDisabled()
                 .onKeyPress(.return) { openSelected(); return .handled }
@@ -522,6 +563,18 @@ struct ContentView: View {
                 .onKeyPress(.downArrow) { moveSelection(viewMode == "grid" ? gridColumnCount : 1); return .handled }
             }
         }
+        .appTopBar {
+            VStack(spacing: 0) {
+                if searching { searchScopes }
+                tagStrip
+                if libraryFilter.isActive {
+                    PromptActiveFilterSummary(filter: $libraryFilter, tags: availableTagOptions)
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 8)
+                }
+            }
+        }
+        .toolbar { libraryToolbar }
         .background(Color(nsColor: .windowBackgroundColor))
         .onDrop(of: [.fileURL], isTargeted: $fileDropTargeted, perform: receiveFiles)
         .background {
@@ -534,7 +587,10 @@ struct ContentView: View {
             // Keep the library keyboard-ready without giving the search field
             // its prominent AppKit focus ring on every window opening.
             DispatchQueue.main.async {
-                if !pendingSearchFocus && !searchFocused { libraryFocused = true }
+                if !pendingSearchFocus {
+                    searchFocused = false
+                    libraryFocused = true
+                }
             }
         }
         .overlay(alignment: .bottom) {
@@ -620,76 +676,80 @@ struct ContentView: View {
         max(1, Int((libraryWidth - 40 + 16) / (cardMinimumWidth + 16)))
     }
 
-    private var header: some View {
-        HStack(spacing: 13) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(searching ? "搜索结果" : (selectedFolder?.name ?? collection.name))
-                    .font(.system(size: 19, weight: .semibold)).lineLimit(1)
-                Text(collection == .trash && !searching && !libraryFilter.isActive
-                     ? "\(shownPrompts.count) 个提示词 · \(trashedFolderRoots.count) 个文件夹"
-                     : "\(shownPrompts.count) 个提示词")
-                    .font(.caption).foregroundStyle(.secondary)
+    @ToolbarContentBuilder
+    private var libraryToolbar: some ToolbarContent {
+        ToolbarItem(id: "library.viewMode", placement: .navigation) {
+            viewModePicker
+        }
+        if #available(macOS 26.0, *) {
+            ToolbarSpacer(.fixed, placement: .navigation)
+            ToolbarItem(id: "library.search", placement: .navigation) {
+                librarySearchField
             }
-            Spacer(minLength: 8)
-            sortMenu
-            Picker(selection: $viewMode) {
-                Image(systemName: "square.grid.2x2")
-                    .accessibilityLabel("网格视图")
-                    .tag("grid")
-                Image(systemName: "list.bullet")
-                    .accessibilityLabel("列表视图")
-                    .tag("list")
-            } label: {
-                EmptyView()
+            .sharedBackgroundVisibility(.hidden)
+        } else {
+            ToolbarItem(id: "library.search", placement: .navigation) {
+                librarySearchField
             }
-            .labelsHidden()
-            .pickerStyle(.segmented)
-            .frame(width: 72)
-            .fixedSize(horizontal: true, vertical: false)
-            .accessibilityLabel("视图方式")
+        }
+        if #available(macOS 26.0, *) {
+            ToolbarSpacer(.flexible, placement: .primaryAction)
+        }
+        ToolbarItem(id: "library.sort", placement: .primaryAction) { sortMenu }
+        if #available(macOS 26.0, *) {
+            ToolbarSpacer(.fixed, placement: .primaryAction)
+        }
+        ToolbarItemGroup(placement: .primaryAction) {
+            Button(action: beginImport) {
+                Label("导入", systemImage: "square.and.arrow.down")
+            }
+            .labelStyle(.titleAndIcon)
+            .disabled(importingFiles)
+            .help("导入一个或多个 .md / .txt 文件")
+            .accessibilityLabel("导入提示词文件")
+            Button(action: startCreate) {
+                Label("新建 Prompt", systemImage: "plus")
+            }
+            .help("新建 Prompt")
+        }
+    }
+
+    private var viewModePicker: some View {
+        Picker(selection: $viewMode) {
+            Image(systemName: "square.grid.2x2")
+                .accessibilityLabel("网格视图")
+                .tag("grid")
+            Image(systemName: "list.bullet")
+                .accessibilityLabel("列表视图")
+                .tag("list")
+        } label: {
+            EmptyView()
+        }
+        .labelsHidden()
+        .pickerStyle(.segmented)
+        .frame(width: 76)
+        .accessibilityLabel("视图方式")
+    }
+
+    private var librarySearchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             TextField("搜索提示词、标签、内容…", text: $searchText)
                 .textFieldStyle(.plain)
                 .focused($searchFocused)
                 .focusEffectDisabled()
-                .padding(.horizontal, 9)
-                .frame(height: 29)
-                .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 7))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 7)
-                        .strokeBorder(searchFocused ? accent.tint.opacity(0.34)
-                                      : Color.primary.opacity(0.10), lineWidth: 0.75)
-                }
-                .frame(minWidth: 160, idealWidth: 220, maxWidth: 280)
                 .accessibilityLabel("搜索提示词")
-            Menu {
-                Button("导出当前集合…") { exportCollection() }
-            } label: { Image(systemName: "ellipsis") }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .frame(width: 29, height: 29)
-                .modifier(SubtleHoverSurface(selected: false))
-                .accessibilityLabel("更多操作")
-            Button(action: beginImport) {
-                Label("导入", systemImage: "square.and.arrow.down")
-                    .padding(.horizontal, 8)
-                    .frame(height: 29)
-                    .contentShape(RoundedRectangle(cornerRadius: 6))
-            }
-            .buttonStyle(.plain)
-            .modifier(SubtleHoverSurface(selected: false))
-            .fixedSize(horizontal: true, vertical: false)
-            .disabled(importingFiles)
-            .help("导入一个或多个 .md / .txt 文件")
-            .accessibilityLabel("导入提示词文件")
-            Button(action: startCreate) { Image(systemName: "plus") }
-                .buttonStyle(.plain)
-                .frame(width: 29, height: 29)
-                .modifier(SubtleHoverSurface(selected: false))
-                .accessibilityLabel("新建 Prompt")
         }
-        .padding(.leading, detailHeaderInset)
-        .padding(.trailing, 20)
-        .frame(height: 76)
+        .padding(.horizontal, 11)
+        .frame(width: 230, height: 32)
+        .modifier(LibrarySearchSurface(isFocused: searchFocused))
+        .background {
+            SearchFocusBoundary(isFocused: searchFocused) {
+                searchFocused = false
+            }
+        }
     }
 
     private var tagStrip: some View {
@@ -736,16 +796,15 @@ struct ContentView: View {
                 ))
             }
         } label: {
-            Text("排序 · \(sort.name)")
+            Label("排序", systemImage: "arrow.up.arrow.down")
                 .font(.system(size: 11))
-                .padding(.horizontal, 8)
-                .frame(height: 29)
-                .contentShape(RoundedRectangle(cornerRadius: 6))
+                .foregroundStyle(Color.primary)
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .labelStyle(.titleAndIcon)
         .menuIndicator(.hidden)
+        .tint(.primary)
         .fixedSize()
-        .modifier(SubtleHoverSurface(selected: false))
         .accessibilityLabel("提示词显示顺序")
         .accessibilityValue(sort.name)
     }
@@ -783,16 +842,16 @@ struct ContentView: View {
             if libraryFilter.isActive {
                 HStack(spacing: 8) {
                     Button("清除筛选") { libraryFilter.reset() }
-                        .buttonStyle(.borderedProminent)
+                        .appPrimaryAction()
                     if searching { Button("清除搜索") { searchText = "" } }
                 }
             } else if searching {
                 Button("清除搜索") { searchText = "" }
             } else if collection != .trash {
                 HStack(spacing: 8) {
-                    Button("新建 Prompt", action: startCreate).buttonStyle(.borderedProminent)
+                    Button("新建 Prompt", action: startCreate).appPrimaryAction()
                     Button("导入 .md/.txt", action: beginImport)
-                        .buttonStyle(.bordered).disabled(importingFiles)
+                        .appSecondaryAction().disabled(importingFiles)
                 }.padding(.top, 4)
             }
             Spacer()
@@ -842,21 +901,20 @@ struct ContentView: View {
     }
 
     private func navigate(_ target: LibraryCollection) {
-        showingSettings = false; creating = false; editingID = nil; collection = target
+        creating = false; editingID = nil; collection = target
         libraryFilter.reset(); showingFilterPanel = false
         selectedPromptID = nil; searchText = ""; settledSearch = ""
     }
     private func open(_ prompt: Prompt) {
         guard prompt.deletedAt == nil else { return }
-        selectedPromptID = prompt.id; showingSettings = false; creating = false; editingID = prompt.id
+        selectedPromptID = prompt.id; creating = false; editingID = prompt.id
     }
     private func startCreate() {
-        showingSettings = false; editingID = nil; selectedPromptID = nil; creating = true
+        editingID = nil; selectedPromptID = nil; creating = true
         searchFocused = false
     }
     private func focusSearch() {
         pendingSearchFocus = true
-        showingSettings = false
         editingID = nil
         creating = false
         DispatchQueue.main.async {
@@ -960,7 +1018,7 @@ struct ContentView: View {
     @MainActor
     private func completeImport(_ urls: [URL], folderID: UUID?, libraryRevision: Int) async throws {
         let initialCollection = collection
-        let startedInLibrary = !creating && editingID == nil && !showingSettings
+        let startedInLibrary = !creating && editingID == nil
         let files = try await Task.detached(priority: .userInitiated) {
             try PromptTextTransfer.readAll(urls)
         }.value
@@ -970,7 +1028,7 @@ struct ContentView: View {
         }
         let created = try PromptTextTransfer.importTexts(files, into: context, folderID: folderID)
         guard !created.isEmpty else { return }
-        if startedInLibrary, !creating, editingID == nil, !showingSettings,
+        if startedInLibrary, !creating, editingID == nil,
            collection == initialCollection {
             searchTask?.cancel()
             navigate(folderID.map(LibraryCollection.folder) ?? .all)
@@ -1013,13 +1071,14 @@ struct ContentView: View {
         }
         return true
     }
-    private func export(_ prompt: Prompt) {
+    private func export(_ prompt: Prompt, title: String? = nil, content: String? = nil) {
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = "\(prompt.title.isEmpty ? "未命名 Prompt" : prompt.title).md"
+        let exportTitle = title ?? prompt.title
+        panel.nameFieldStringValue = "\(exportTitle.isEmpty ? "未命名 Prompt" : exportTitle).md"
         panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
         guard panel.runModal() == .OK, let url = panel.url else { return }
         perform {
-            _ = try PromptTextTransfer.write(content: prompt.content, format: .markdown, to: url)
+            _ = try PromptTextTransfer.write(content: content ?? prompt.content, format: .markdown, to: url)
             showToast("已导出 Prompt")
         }
     }
@@ -1033,14 +1092,16 @@ struct ContentView: View {
             try PromptLibrary.setCover(cover, for: prompt, in: context)
         }
     }
-    private func exportCollection() {
+    private func exportCollection(_ folder: Folder) {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true; panel.canChooseFiles = false
         panel.prompt = "导出到此文件夹"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         perform {
             let written = try PromptTextTransfer.writeCollection(
-                prompts: shownPrompts.filter { $0.deletedAt == nil }, folders: activeFolders, to: url)
+                prompts: PromptLibrary.folderContents(of: folder.id, prompts: activePrompts,
+                                                     folders: activeFolders),
+                folders: activeFolders, to: url)
             showToast("已导出 \(written.count) 个 Prompt")
         }
     }

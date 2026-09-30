@@ -44,6 +44,7 @@ enum PromptPresentation {
 }
 
 struct PromptCardView: View {
+    @Environment(\.appAccentStyle) private var accent
     @State private var isHovering = false
     let prompt: Prompt
     let selected: Bool
@@ -77,7 +78,7 @@ struct PromptCardView: View {
                             .lineLimit(1)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 4)
-                            .background(Color.primary.opacity(0.06), in: Capsule())
+                            .background(accent.controlFill, in: Capsule())
                     }
                     if prompt.tagNames.count > 3 {
                         Text("+\(prompt.tagNames.count - 3)")
@@ -94,14 +95,13 @@ struct PromptCardView: View {
                 .fill(Color(nsColor: .controlBackgroundColor))
                 .overlay {
                     RoundedRectangle(cornerRadius: 7)
-                        .fill(Color.primary.opacity(isHovering || selected ? 0.045 : 0))
+                        .fill(selected ? accent.softSelection : isHovering ? accent.hoverFill : Color.clear)
                 }
         }
         .clipShape(RoundedRectangle(cornerRadius: 7))
         .overlay {
             RoundedRectangle(cornerRadius: 7)
-                .strokeBorder(Color(nsColor: .separatorColor).opacity(isHovering || selected ? 0.75 : 0.45),
-                              lineWidth: 0.5)
+                .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.75)
         }
         .contentShape(RoundedRectangle(cornerRadius: 7))
         .onHover { isHovering = $0 }
@@ -118,11 +118,11 @@ struct PromptCardView: View {
                     Image(nsImage: image).resizable().scaledToFit()
                         .frame(width: geometry.size.width, height: geometry.size.height)
                 } else {
-                    Rectangle().fill(Color(red: 0.10, green: 0.11, blue: 0.12))
+                    Rectangle().fill(Color(nsColor: .textBackgroundColor))
                     Text(PromptPresentation.preview(prompt.content).isEmpty
                          ? "空白 Prompt" : PromptPresentation.preview(prompt.content))
                         .font(.system(size: 11))
-                        .foregroundStyle(Color.white.opacity(0.9))
+                        .foregroundStyle(Color(nsColor: .textColor))
                         .lineSpacing(3)
                         .lineLimit(6)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -132,13 +132,13 @@ struct PromptCardView: View {
                     HStack {
                         Button(action: onFavorite) {
                             Image(systemName: prompt.isFavorite ? "star.fill" : "star")
-                                .foregroundStyle(prompt.isFavorite ? Color.yellow : image == nil ? Color.white : Color.primary)
+                                .foregroundStyle(prompt.isFavorite ? accent.actionForeground : Color.primary)
                         }
                         .accessibilityLabel(prompt.isFavorite ? "取消收藏" : "收藏")
                         Spacer()
                         Button(action: onCopy) {
                             Image(systemName: "doc.on.doc")
-                                .foregroundStyle(image == nil ? Color.white : Color.primary)
+                                .foregroundStyle(Color.primary)
                         }
                             .accessibilityLabel("复制 Prompt")
                     }
@@ -214,7 +214,7 @@ struct PromptListRow: View {
             if prompt.deletedAt == nil {
                 Button(action: onFavorite) {
                     Image(systemName: prompt.isFavorite ? "star.fill" : "star")
-                        .foregroundStyle(prompt.isFavorite ? Color.yellow : Color.secondary)
+                        .foregroundStyle(prompt.isFavorite ? accent.actionForeground : Color.primary)
                 }
                 .accessibilityLabel(prompt.isFavorite ? "取消收藏" : "收藏")
                 Button(action: onCopy) { Image(systemName: "doc.on.doc") }
@@ -223,7 +223,7 @@ struct PromptListRow: View {
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 10).frame(height: 65)
-        .background(selected ? accent.softSelection : isHovering ? Color.primary.opacity(0.045) : Color.clear,
+        .background(selected ? accent.softSelection : isHovering ? accent.hoverFill : Color.clear,
                     in: RoundedRectangle(cornerRadius: 6))
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }

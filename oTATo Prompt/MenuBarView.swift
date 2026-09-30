@@ -3,6 +3,7 @@ import SwiftUI
 
 /// A compact library entry point that keeps the copy action one click away.
 struct MenuBarView: View {
+    @Environment(\.appAccentStyle) private var accent
     @EnvironmentObject private var app: AppCoordinator
     @Environment(\.dismiss) private var dismiss
     @Query private var prompts: [Prompt]
@@ -64,7 +65,11 @@ struct MenuBarView: View {
             }
             .padding(.horizontal, 12)
             .frame(height: 36)
-            .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 8))
+            .background(accent.controlFill, in: RoundedRectangle(cornerRadius: 8))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.75)
+            }
             .padding(.horizontal, 14)
             .padding(.vertical, 11)
 
@@ -163,6 +168,7 @@ struct MenuBarView: View {
                             }
                         }
                         .buttonStyle(.plain)
+                        .foregroundStyle(.primary)
                         .accessibilityLabel("查看全部\(title)")
                     }
                 }
@@ -191,7 +197,7 @@ struct MenuBarView: View {
                     }
                 }
                 .frame(width: 56, height: 31.5)
-                .background(.quaternary.opacity(0.3))
+                .background(Color(nsColor: .textBackgroundColor))
                 .clipped()
                 .clipShape(RoundedRectangle(cornerRadius: 6))
                 VStack(alignment: .leading, spacing: 3) {
@@ -208,12 +214,12 @@ struct MenuBarView: View {
                 Spacer(minLength: 4)
                 Image(systemName: "doc.on.doc")
                     .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.primary)
             }
             .padding(.horizontal, 8)
             .frame(height: 54)
             .contentShape(RoundedRectangle(cornerRadius: 8))
-            .background(.quaternary.opacity(hoveredPromptID == prompt.id ? 0.6 : 0.3),
+            .background(hoveredPromptID == prompt.id ? accent.hoverFill : accent.controlFill,
                         in: RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
@@ -244,7 +250,7 @@ struct MenuBarView: View {
                     .frame(maxWidth: .infinity)
             }
         }
-        .buttonStyle(.bordered)
+        .appSecondaryAction()
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
     }

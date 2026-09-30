@@ -96,7 +96,8 @@ enum PromptLibrary {
         _ cover: StoredCover?,
         crop: CoverCrop? = nil,
         for prompt: Prompt,
-        in context: ModelContext
+        in context: ModelContext,
+        save: Bool = true
     ) throws {
         prompt.coverPath = cover?.relativePath
         prompt.coverWidth = cover?.width
@@ -104,7 +105,8 @@ enum PromptLibrary {
         prompt.coverFileSize = cover?.fileSize
         prompt.coverHash = cover?.sha256
         prompt.coverCrop = cover == nil ? .full : (crop ?? .full)
-        try touch(prompt, in: context)
+        prompt.updatedAt = .now
+        if save { try context.save() }
     }
 
     static func setCoverCrop(_ crop: CoverCrop, for prompt: Prompt, in context: ModelContext) throws {
@@ -113,11 +115,7 @@ enum PromptLibrary {
         try touch(prompt, in: context)
     }
 
-    static func setTags(_ names: [String], for prompt: Prompt, in context: ModelContext) throws {
-        try setTags(names, for: prompt, in: context, save: true)
-    }
-
-    private static func setTags(_ names: [String], for prompt: Prompt, in context: ModelContext, save: Bool) throws {
+    static func setTags(_ names: [String], for prompt: Prompt, in context: ModelContext, save: Bool = true) throws {
         let checked = try checkedTagNames(names)
         let current = Set(prompt.tags.map(\.normalizedName))
         let requested = Set(checked.map(Tag.normalize))

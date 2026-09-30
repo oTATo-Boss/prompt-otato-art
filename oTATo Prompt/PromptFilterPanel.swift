@@ -55,7 +55,7 @@ struct PromptFilterPanel: View {
                     .disabled(!filter.isActive)
                 Spacer()
                 Button("完成", action: onDone)
-                    .buttonStyle(.borderedProminent)
+                    .appPrimaryAction()
                     .keyboardShortcut(.defaultAction)
                     .controlSize(.small)
             }
@@ -118,11 +118,11 @@ struct PromptFilterPanel: View {
         .font(.system(size: 11))
         .padding(.horizontal, 9)
         .frame(height: 29)
-        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 6))
+        .background(accent.controlFill, in: RoundedRectangle(cornerRadius: 6))
         .overlay {
             RoundedRectangle(cornerRadius: 6)
-                .strokeBorder(tagSearchFocused ? accent.tint.opacity(0.30)
-                              : Color.primary.opacity(0.08), lineWidth: 0.75)
+                .strokeBorder(tagSearchFocused ? accent.focusOutline
+                              : Color(nsColor: .separatorColor), lineWidth: 0.75)
         }
     }
 
@@ -360,11 +360,11 @@ private struct PromptFilterQuietButtonStyle: ButtonStyle {
             configuration.label
                 .foregroundStyle(selected ? accent.selectedForeground : Color.primary)
                 .background(selected ? accent.selectedFill
-                            : Color.primary.opacity(hovering ? 0.085 : 0.045),
+                            : hovering ? accent.hoverFill : accent.controlFill,
                             in: RoundedRectangle(cornerRadius: cornerRadius))
                 .overlay {
                     RoundedRectangle(cornerRadius: cornerRadius)
-                        .strokeBorder(isFocused ? accent.tint.opacity(0.30) : Color.clear, lineWidth: 0.75)
+                        .strokeBorder(isFocused ? accent.focusOutline : Color.clear, lineWidth: 0.75)
                 }
                 .opacity(!isEnabled ? 0.4 : configuration.isPressed ? 0.7 : 1)
                 .onHover { hovering = $0 }

@@ -45,8 +45,9 @@ final class AppCoordinator: NSObject, ObservableObject {
 
     var openWindowAction: (() -> Void)?
     /// Installed while an editor is visible so app-level commands use the latest draft.
-    private var flushEditor: (() -> Bool)?
-    private var flushEditorOwner: UUID?
+    private var editorCopy: (() -> Void)?
+    private var editorToggleFavorite: (() -> Void)?
+    private var editorOwner: UUID?
     private var toastTask: Task<Void, Never>?
     private var globalSearchController: GlobalSearchController?
     private var hotkeyManager: GlobalHotKeyManager?
@@ -118,58 +119,60 @@ final class AppCoordinator: NSObject, ObservableObject {
         globalSearchController?.toggle()
     }
 
-    func installEditorFlush(owner: UUID, action: @escaping () -> Bool) {
-        flushEditorOwner = owner
-        flushEditor = action
+    func installEditorActions(owner: UUID, copy: @escaping () -> Void,
+                              toggleFavorite: @escaping () -> Void) {
+        editorOwner = owner
+        editorCopy = copy
+        editorToggleFavorite = toggleFavorite
     }
 
-    func clearEditorFlush(owner: UUID) {
-        guard flushEditorOwner == owner else { return }
-        flushEditorOwner = nil
-        flushEditor = nil
+    func clearEditorActions(owner: UUID) {
+        guard editorOwner == owner else { return }
+        editorOwner = nil
+        editorCopy = nil
+        editorToggleFavorite = nil
     }
 
-    func requestCopy(_ prompt: Prompt, source: CopySource = .mainWindow) {
-        do { try finishCopy(prompt, source: source) }
+    func requestCopy(_ prompt: Prompt, source: CopySource = .mainWindow, content: String? = nil) {
+        do { try finishCopy(prompt, source: source, content: content) }
         catch { showToast(error.localizedDescription) }
     }
 
     func requestCopySelected() {
-        guard flushEditor?() ?? true else { return }
+        if let editorCopy { editorCopy(); return }
         guard let prompt = selectedPrompt() else { return }
         requestCopy(prompt)
     }
 
     func toggleFavoriteSelected() {
-        guard flushEditor?() ?? true else { return }
+        if let editorToggleFavorite { editorToggleFavorite(); return }
         guard let prompt = selectedPrompt() else { return }
         do { try PromptLibrary.setFavorite(!prompt.isFavorite, for: prompt, in: container.mainContext) }
         catch { showToast(error.localizedDescription) }
     }
 
     func trashSelected() {
-        guard flushEditor?() ?? true else { return }
         guard let prompt = selectedPrompt() else { return }
         do {
             try PromptLibrary.trash(prompt, in: container.mainContext)
             selectedPromptID = nil
-            flushEditor = nil
-            flushEditorOwner = nil
+            editorCopy = nil
+            editorToggleFavorite = nil
+            editorOwner = nil
             lastTrashedPromptID = prompt.id
             trashRevision += 1
         } catch { showToast(error.localizedDescription) }
     }
 
-    /// Save the current draft before replacing the store. Incrementing the revision
-    /// prevents a disappearing editor from writing its old draft into restored data.
+    /// Replacing the store discards the current unsaved editing session.
     func prepareForLibraryRestore() -> Bool {
-        guard flushEditor?() ?? true else { return false }
         globalSearchController?.dismiss(restoreFocus: false)
         libraryRevision += 1
         selectedPromptID = nil
         openPromptID = nil
-        flushEditor = nil
-        flushEditorOwner = nil
+        editorCopy = nil
+        editorToggleFavorite = nil
+        editorOwner = nil
         return true
     }
 
@@ -179,10 +182,10 @@ final class AppCoordinator: NSObject, ObservableObject {
         return prompts.first { $0.id == id && $0.deletedAt == nil }
     }
 
-    private func finishCopy(_ prompt: Prompt, source: CopySource) throws {
+    private func finishCopy(_ prompt: Prompt, source: CopySource, content: String?) throws {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        guard pasteboard.setString(prompt.content, forType: .string) else {
+        guard pasteboard.setString(content ?? prompt.content, forType: .string) else {
             throw CopyError.pasteboardUnavailable
         }
         do {

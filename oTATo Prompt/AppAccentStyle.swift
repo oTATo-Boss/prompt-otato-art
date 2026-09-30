@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 enum AppAccentPalette: String, CaseIterable {
@@ -11,35 +12,36 @@ struct AppAccentStyle {
 
     private var isDark: Bool { colorScheme == .dark }
 
-    /// The control tint is darker than the yellow selection fill in light mode,
-    /// so focus rings and small symbols remain visible on white surfaces.
-    var tint: Color {
-        switch palette {
-        case .monochrome: color(isDark ? 0xF1F1EF : 0x202020)
-        case .notes: color(isDark ? 0xFFD76B : 0xA57100)
-        }
-    }
+    var tint: Color { selectedFill }
 
     var selectedFill: Color {
         switch palette {
-        case .monochrome: color(isDark ? 0xF1F1EF : 0x202020)
-        case .notes: color(isDark ? 0xFFD76B : 0xF6CF58)
+        case .monochrome: Color(nsColor: .labelColor)
+        case .notes: Color(nsColor: .systemYellow)
         }
     }
 
     var selectedForeground: Color {
         switch palette {
-        case .monochrome: color(isDark ? 0x161616 : 0xFFFFFF)
+        case .monochrome: Color(nsColor: .textBackgroundColor)
         case .notes: color(0x202020)
         }
     }
 
     var softSelection: Color {
-        switch palette {
-        case .monochrome: color(isDark ? 0x353535 : 0xF2F2F2)
-        case .notes: color(isDark ? 0x463C27 : 0xFFF6DD)
-        }
+        Color(nsColor: .unemphasizedSelectedContentBackgroundColor)
     }
+
+    var controlFill: Color { softSelection.opacity(0.40) }
+    var hoverFill: Color { softSelection.opacity(0.65) }
+
+    /// Small accent symbols need more contrast than a large yellow fill.
+    var actionForeground: Color {
+        palette == .notes ? (isDark ? Color(nsColor: .systemYellow) : color(0x8A6500))
+            : Color(nsColor: .labelColor)
+    }
+
+    var focusOutline: Color { actionForeground.opacity(0.55) }
 
     private func color(_ hex: UInt32) -> Color {
         Color(.sRGB,
@@ -87,4 +89,48 @@ private struct AppAccentModifier: ViewModifier {
 
 extension View {
     func applyAppAccent() -> some View { modifier(AppAccentModifier()) }
+    func appPrimaryAction() -> some View { modifier(AppPrimaryActionModifier()) }
+    func appSecondaryAction() -> some View {
+        modifier(AppSecondaryActionModifier())
+    }
+    func appScrollEdge() -> some View { modifier(AppScrollEdgeModifier()) }
+
+    @ViewBuilder
+    func appTopBar<Bar: View>(@ViewBuilder content: () -> Bar) -> some View {
+        if #available(macOS 26.0, *) {
+            safeAreaBar(edge: .top, spacing: 0, content: content)
+        } else {
+            safeAreaInset(edge: .top, spacing: 0, content: content)
+        }
+    }
+}
+
+private struct AppPrimaryActionModifier: ViewModifier {
+    @Environment(\.appAccentStyle) private var accent
+    @Environment(\.isEnabled) private var isEnabled
+
+    func body(content: Content) -> some View {
+        content
+            .buttonStyle(.borderedProminent)
+            .tint(accent.selectedFill)
+            .foregroundStyle(isEnabled ? accent.selectedForeground
+                             : Color(nsColor: .disabledControlTextColor))
+    }
+}
+
+private struct AppSecondaryActionModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content.buttonStyle(.bordered).tint(nil)
+    }
+}
+
+private struct AppScrollEdgeModifier: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content.scrollEdgeEffectStyle(.soft, for: .top)
+        } else {
+            content
+        }
+    }
 }
