@@ -631,6 +631,7 @@ struct ContentView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 8)
+            sortMenu
             Picker(selection: $viewMode) {
                 Image(systemName: "square.grid.2x2")
                     .accessibilityLabel("网格视图")
@@ -646,7 +647,6 @@ struct ContentView: View {
             .frame(width: 72)
             .fixedSize(horizontal: true, vertical: false)
             .accessibilityLabel("视图方式")
-            sortMenu
             TextField("搜索提示词、标签、内容…", text: $searchText)
                 .textFieldStyle(.plain)
                 .focused($searchFocused)
