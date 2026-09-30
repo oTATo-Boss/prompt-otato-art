@@ -23,6 +23,7 @@ enum CopyError: LocalizedError {
 final class AppCoordinator: NSObject, ObservableObject {
     let container: ModelContainer
     let updater = UpdaterService()
+    private let isPreview = ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
 
     @Published var openPromptID: UUID?
     @Published var selectedPromptID: UUID?
@@ -33,7 +34,9 @@ final class AppCoordinator: NSObject, ObservableObject {
     @Published var hotkeyStatus = "尚未注册"
     @Published var hotkeyIsRegistered = false
     @Published var menuBarEnabled: Bool {
-        didSet { UserDefaults.standard.set(menuBarEnabled, forKey: "menuBarEnabled") }
+        didSet {
+            if !isPreview { UserDefaults.standard.set(menuBarEnabled, forKey: "menuBarEnabled") }
+        }
     }
     @Published var menuCopyCompleted = 0
     @Published private(set) var trashRevision = 0
@@ -51,16 +54,20 @@ final class AppCoordinator: NSObject, ObservableObject {
 
     init(container: ModelContainer) {
         self.container = container
-        let defaults = UserDefaults.standard
-        if defaults.object(forKey: "menuBarEnabled") == nil {
-            defaults.set(true, forKey: "menuBarEnabled")
+        if ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1" {
+            self.menuBarEnabled = false
+        } else {
+            let defaults = UserDefaults.standard
+            if defaults.object(forKey: "menuBarEnabled") == nil {
+                defaults.set(true, forKey: "menuBarEnabled")
+            }
+            self.menuBarEnabled = defaults.bool(forKey: "menuBarEnabled")
         }
-        self.menuBarEnabled = defaults.bool(forKey: "menuBarEnabled")
         super.init()
     }
 
     func start() {
-        guard !started else { return }
+        guard !isPreview, !started else { return }
         started = true
         globalSearchController = GlobalSearchController(app: self)
         hotkeyManager = GlobalHotKeyManager { [weak self] in

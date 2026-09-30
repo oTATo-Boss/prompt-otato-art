@@ -12,7 +12,7 @@ final class UpdaterService: ObservableObject {
 
     init() {
         controller = SPUStandardUpdaterController(
-            startingUpdater: true,
+            startingUpdater: ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] != "1",
             updaterDelegate: nil,
             userDriverDelegate: nil
         )

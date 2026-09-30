@@ -24,7 +24,13 @@ oTATo prompt 是简体中文 macOS 提示词资料库。提示词和封面保存
 
 ## 本地构建
 
-需要 Xcode 和 macOS SDK。打开工程后选择 **oTATo Prompt** scheme，运行到 **My Mac**。命令行构建 Universal 测试版：
+需要 Xcode 和 macOS SDK。打开工程后选择 **oTATo Prompt** scheme，运行到 **My Mac**。
+
+调整新建页布局时，打开 `PromptCreateView.swift`，使用 **Editor → Canvas** 显示画布，首次点击 **Resume** 启动预览。画布会随源码变化自动刷新，可在深色和浅色紧凑预览之间切换并直接输入。预览使用内存资料库；“创建”和“返回”按钮仅用于展示，不写入实际提示词。
+
+完整应用的保存、搜索、复制、菜单栏和全局快捷键用 **⌘R** 运行检查；再次运行会加载最新代码。
+
+命令行构建 Universal 测试版：
 
 ```sh
 xcodebuild -project 'oTATo Prompt.xcodeproj' \

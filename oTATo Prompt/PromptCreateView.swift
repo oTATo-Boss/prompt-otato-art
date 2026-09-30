@@ -301,3 +301,21 @@ struct PromptCreateView: View {
         return true
     }
 }
+
+#if DEBUG
+#Preview("新建 · 深色紧凑", traits: .fixedLayout(width: 650, height: 560)) {
+    PromptCreateView(folders: [], initialFolderID: nil,
+                     onCreate: { _, _, _, _, _, _, _, _ in }, onCancel: {})
+        .preferredColorScheme(.dark)
+        .environment(\.appAccentStyle, AppAccentStyle(palette: .monochrome, colorScheme: .dark))
+        .tint(AppAccentStyle(palette: .monochrome, colorScheme: .dark).tint)
+}
+
+#Preview("新建 · 浅色紧凑", traits: .fixedLayout(width: 650, height: 560)) {
+    PromptCreateView(folders: [], initialFolderID: nil,
+                     onCreate: { _, _, _, _, _, _, _, _ in }, onCancel: {})
+        .preferredColorScheme(.light)
+        .environment(\.appAccentStyle, AppAccentStyle(palette: .monochrome, colorScheme: .light))
+        .tint(AppAccentStyle(palette: .monochrome, colorScheme: .light).tint)
+}
+#endif

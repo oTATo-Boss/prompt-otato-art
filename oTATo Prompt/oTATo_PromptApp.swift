@@ -24,7 +24,8 @@ struct oTATo_PromptApp: App {
 
     init() {
         do {
-            let container = try PromptPersistence.makeContainer()
+            let isPreview = ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
+            let container = try PromptPersistence.makeContainer(inMemory: isPreview)
             app = AppCoordinator(container: container)
             launchError = nil
         } catch {
