@@ -149,7 +149,7 @@ struct PromptLibraryFilter: Equatable {
     }
 }
 
-struct PromptTagFilterOption: Identifiable {
+struct PromptTagFilterOption: Identifiable, Equatable {
     let id: UUID
     let name: String
     let promptCount: Int

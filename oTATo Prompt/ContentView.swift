@@ -715,30 +715,8 @@ struct ContentView: View {
 
     private var tagStrip: some View {
         HStack(spacing: 12) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 7) {
-                    chip("全部", selected: libraryFilter.selectedTagIDs.isEmpty &&
-                         libraryFilter.excludedTagIDs.isEmpty && libraryFilter.tagPresence == .any) {
-                        libraryFilter.clearTags()
-                    }
-                    ForEach(availableTagOptions) { tag in
-                        let excluded = libraryFilter.excludedTagIDs.contains(tag.id)
-                        chip(excluded ? "− \(tag.name)" : tag.name,
-                             selected: excluded || libraryFilter.selectedTagIDs.contains(tag.id)) {
-                            if excluded { libraryFilter.toggleExcludedTag(tag.id) }
-                            else { libraryFilter.toggleTag(tag.id) }
-                        }
-                        .help("\(tag.promptCount) 个提示词；点击选择或取消，右键可排除")
-                        .contextMenu {
-                            Button(excluded ? "取消排除此标签" : "排除此标签") {
-                                libraryFilter.toggleExcludedTag(tag.id)
-                            }
-                        }
-                    }
-                }
-                .padding(.vertical, 2)
-            }
-            .frame(height: 29)
+            NativeTagStrip(filter: $libraryFilter, tags: availableTagOptions)
+                .frame(height: 29)
             Button { showingFilterPanel.toggle() } label: {
                 HStack(spacing: 5) {
                     Label("筛选", systemImage: "line.3.horizontal.decrease")
