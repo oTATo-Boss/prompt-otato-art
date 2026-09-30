@@ -69,12 +69,6 @@ private struct SidebarFolderNode: View {
     }
 }
 
-private enum LibrarySort: String, CaseIterable, Identifiable {
-    case updated = "最近编辑", used = "最近使用", created = "创建时间"
-    case title = "名称", manual = "手动排序"
-    var id: String { rawValue }
-}
-
 private struct LibraryWidthKey: PreferenceKey {
     static var defaultValue: CGFloat = 900
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
@@ -129,6 +123,8 @@ struct ContentView: View {
     @Query private var tags: [Tag]
     @AppStorage("cardSize") private var cardSize = "standard"
     @AppStorage("library.viewMode") private var viewMode = "grid"
+    @AppStorage("library.sort") private var sort: PromptLibrarySort = .updated
+    @AppStorage("library.sortDirection") private var sortDirection: PromptLibrarySortDirection = .descending
 
     @State private var collection: LibraryCollection = .all
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
@@ -142,7 +138,6 @@ struct ContentView: View {
     @State private var settledSearch = ""
     @State private var searchScope: PromptSearch.Scope = .all
     @State private var searchTask: Task<Void, Never>?
-    @State private var sort: LibrarySort = .updated
     @State private var importing = false
     @State private var importDestinationFolderID: UUID?
     @State private var importingFiles = false
@@ -196,16 +191,7 @@ struct ContentView: View {
             }
         }
         if searching { return base }
-        let order: LibrarySort = collection == .favorites && sort == .updated ? .used : sort
-        return base.sorted { a, b in
-            switch order {
-            case .updated: a.updatedAt > b.updatedAt
-            case .used: (a.lastUsedAt ?? .distantPast) > (b.lastUsedAt ?? .distantPast)
-            case .created: a.createdAt > b.createdAt
-            case .title: a.title.localizedStandardCompare(b.title) == .orderedAscending
-            case .manual: (a.sortIndex ?? .greatestFiniteMagnitude) < (b.sortIndex ?? .greatestFiniteMagnitude)
-            }
-        }
+        return sort.sorted(base, direction: sortDirection)
     }
 
     private var shownPrompts: [Prompt] {
@@ -679,10 +665,6 @@ struct ContentView: View {
                 .frame(minWidth: 160, idealWidth: 220, maxWidth: 280)
                 .accessibilityLabel("搜索提示词")
             Menu {
-                Picker("排序方式", selection: $sort) {
-                    ForEach(LibrarySort.allCases) { item in Text(item.rawValue).tag(item) }
-                }
-                Divider()
                 Button("导出当前集合…") { exportCollection() }
             } label: { Image(systemName: "ellipsis") }
                 .menuStyle(.borderlessButton)
@@ -744,8 +726,61 @@ struct ContentView: View {
                                   resultCount: shownPrompts.count, scopeTitle: filterScopeTitle,
                                   onDone: { showingFilterPanel = false })
             }
+            sortMenu
         }
         .padding(.horizontal, 20).padding(.vertical, 6)
+    }
+
+    private var sortMenu: some View {
+        Menu {
+            Picker("排序依据", selection: Binding(get: { sort }, set: selectSort)) {
+                ForEach(PromptLibrarySort.allCases) { item in Text(item.name).tag(item) }
+            }
+            if sort != .manual {
+                Divider()
+                Picker("排序方向", selection: $sortDirection) {
+                    ForEach(PromptLibrarySortDirection.allCases) { direction in
+                        Text(direction.name(for: sort)).tag(direction)
+                    }
+                }
+            } else {
+                Divider()
+                Text(libraryFilter.isActive ? "清除筛选后可拖动调整顺序" : "拖动卡片或列表项调整顺序")
+            }
+        } label: {
+            Label(searching ? "排序 · 相关度" : "排序 · \(sort.name)",
+                  systemImage: "arrow.up.arrow.down")
+                .font(.system(size: 11))
+                .padding(.horizontal, 8)
+                .frame(height: 29)
+                .contentShape(RoundedRectangle(cornerRadius: 6))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .modifier(SubtleHoverSurface(selected: false))
+        .disabled(searching)
+        .accessibilityLabel("提示词显示顺序")
+        .accessibilityValue(searching ? "相关度" : sort.name)
+        .help(searching ? "搜索结果按相关度排序" : sort == .manual
+              ? "手动排序：拖动卡片或列表项调整顺序"
+              : "\(sort.name) · \(sortDirection.name(for: sort))")
+    }
+
+    private func selectSort(_ value: PromptLibrarySort) {
+        if value == .manual && !activePrompts.contains(where: { $0.sortIndex != nil }) {
+            // Start manual ordering with the order the user is currently seeing.
+            do {
+                try PromptLibrary.setManualOrder(sort.sorted(activePrompts, direction: sortDirection), in: context)
+            } catch {
+                errorMessage = error.localizedDescription
+                return
+            }
+        }
+        if value != sort {
+            sortDirection = value == .title ? .ascending : .descending
+        }
+        sort = value
     }
 
     private var searchScopes: some View {
@@ -885,7 +920,6 @@ struct ContentView: View {
             libraryFilter.reset()
             showingFilterPanel = false
             collection = folderID.map(LibraryCollection.folder) ?? .all
-            sort = .updated
             creating = false
             editingID = nil
             selectedPromptID = prompt.id
@@ -973,7 +1007,6 @@ struct ContentView: View {
            collection == initialCollection {
             searchTask?.cancel()
             navigate(folderID.map(LibraryCollection.folder) ?? .all)
-            sort = .updated
             selectedPromptID = created.first?.id
         }
         showToast("已导入 \(created.count) 个 Prompt")
@@ -1078,7 +1111,9 @@ struct ContentView: View {
             Task { @MainActor in
                 guard let source = shownPrompts.first(where: { $0.id == id }),
                       source.id != target.id else { return }
-                var ordered = shownPrompts
+                // Maintain one order across collections; other folders keep
+                // their relative positions when reordering a filtered collection.
+                var ordered = sort.sorted(activePrompts, direction: sortDirection)
                 ordered.removeAll { $0.id == source.id }
                 let index = ordered.firstIndex { $0.id == target.id } ?? ordered.count
                 ordered.insert(source, at: index)

@@ -348,16 +348,16 @@ struct PromptEditorView: View {
             } else {
                 resolved = title
             }
-            let changed = prompt.title != resolved || prompt.content != content ||
-                prompt.folderID != folderID || prompt.isFavorite != favorite ||
+            let edited = prompt.title != resolved || prompt.content != content ||
+                prompt.folderID != folderID ||
                 Set(prompt.tagNames) != Set(parsedTags)
-            guard changed else { saveError = nil; return true }
+            guard edited || prompt.isFavorite != favorite else { saveError = nil; return true }
             prompt.title = resolved
             prompt.content = content
             prompt.folderID = folderID
             prompt.isFavorite = favorite
             try PromptLibrary.setTags(parsedTags, for: prompt, in: context)
-            prompt.updatedAt = .now
+            if edited { prompt.updatedAt = .now }
             try context.save()
             saveError = nil
             return true

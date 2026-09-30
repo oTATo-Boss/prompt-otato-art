@@ -81,7 +81,8 @@ enum PromptLibrary {
     static func setFavorite(_ favorite: Bool, for prompt: Prompt, in context: ModelContext) throws {
         guard prompt.isFavorite != favorite else { return }
         prompt.isFavorite = favorite
-        try touch(prompt, in: context)
+        // Collection membership is independent of content edits and ordering.
+        try context.save()
     }
 
     static func move(_ prompt: Prompt, to folderID: UUID?, in context: ModelContext) throws {
