@@ -4,7 +4,7 @@ import SwiftData
 
 // MARK: - Markdown and TXT
 
-struct ImportedPromptText {
+struct ImportedPromptText: Sendable {
     let title: String
     let content: String
     let format: PromptFormat
@@ -23,7 +23,7 @@ enum PromptTextTransfer {
         }
     }
 
-    static func read(_ url: URL) throws -> ImportedPromptText {
+    nonisolated static func read(_ url: URL) throws -> ImportedPromptText {
         switch url.pathExtension.lowercased() {
         case "md", "txt": break
         default: throw TransferError.unsupportedFormat(url.lastPathComponent)
@@ -37,14 +37,14 @@ enum PromptTextTransfer {
         let title = url.deletingPathExtension().lastPathComponent
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return ImportedPromptText(
-            title: title.isEmpty ? "未命名 Prompt" : String(title.prefix(100)),
+            title: title.isEmpty ? "未命名 Prompt" : title,
             content: content,
             format: .markdown
         )
     }
 
     /// Every file is decoded before a caller creates any database objects.
-    static func readAll(_ urls: [URL]) throws -> [ImportedPromptText] {
+    nonisolated static func readAll(_ urls: [URL]) throws -> [ImportedPromptText] {
         var files: [ImportedPromptText] = []
         files.reserveCapacity(urls.count)
         for url in urls { files.append(try read(url)) }
@@ -53,8 +53,16 @@ enum PromptTextTransfer {
 
     /// An invalid file or failed save leaves the existing library unchanged.
     @discardableResult
+    @MainActor
     static func importFiles(_ urls: [URL], into context: ModelContext, folderID: UUID? = nil) throws -> [Prompt] {
-        let files = try readAll(urls)
+        try importTexts(readAll(urls), into: context, folderID: folderID)
+    }
+
+    /// Insert fully decoded text in one transaction after file I/O has finished.
+    @discardableResult
+    @MainActor
+    static func importTexts(_ files: [ImportedPromptText], into context: ModelContext,
+                            folderID: UUID? = nil) throws -> [Prompt] {
         let prompts = files.map {
             Prompt(title: $0.title, content: $0.content,
                    formatRaw: PromptFormat.markdown.rawValue, folderID: folderID)

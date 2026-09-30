@@ -1,7 +1,7 @@
 import Foundation
 import SwiftData
 
-enum PromptFormat: String, CaseIterable, Codable, Identifiable {
+enum PromptFormat: String, CaseIterable, Codable, Identifiable, Sendable {
     case markdown
     case txt
 

@@ -342,7 +342,6 @@ struct PromptEditorView: View {
         guard prompt.deletedAt == nil,
               openedLibraryRevision == app.libraryRevision else { return false }
         do {
-            guard title.count <= 100 else { throw PromptLibraryError.invalidTitle }
             let resolved: String
             if finalizeTitle && title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 resolved = (try? PromptLibrary.resolvedTitle(title, content: content)) ?? "未命名 Prompt"

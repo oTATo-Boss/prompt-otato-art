@@ -139,6 +139,9 @@ struct ContentView: View {
     @State private var searchTask: Task<Void, Never>?
     @State private var sort: LibrarySort = .updated
     @State private var importing = false
+    @State private var importDestinationFolderID: UUID?
+    @State private var importingFiles = false
+    @State private var fileDropTargeted = false
     @State private var newFolderName = ""
     @State private var newFolderParent: UUID?
     @State private var showNewFolder = false
@@ -240,7 +243,9 @@ struct ContentView: View {
         .frame(minWidth: 900, minHeight: 620)
         .fileImporter(isPresented: $importing,
                       allowedContentTypes: [.plainText, UTType(filenameExtension: "md") ?? .plainText],
-                      allowsMultipleSelection: true, onCompletion: importFiles)
+                      allowsMultipleSelection: true) { result in
+            importFiles(result, folderID: importDestinationFolderID)
+        }
         .alert("新建文件夹", isPresented: $showNewFolder) {
             TextField("文件夹名称", text: $newFolderName)
             Button("创建", action: createFolder)
@@ -333,7 +338,6 @@ struct ContentView: View {
             Task { await PromptSearch.prepareIndex(activePrompts, folders: activeFolders) }
         }
         .task { await PromptSearch.prepareIndex(activePrompts, folders: activeFolders) }
-        .onDrop(of: [.fileURL], isTargeted: nil, perform: receiveFiles)
         .overlay(alignment: .bottom) {
             if let value = app.toastText {
                 Label(value, systemImage: value == "已复制" ? "checkmark.circle.fill" : "info.circle")
@@ -499,6 +503,7 @@ struct ContentView: View {
             }
         }
         .background(Color(nsColor: .windowBackgroundColor))
+        .onDrop(of: [.fileURL], isTargeted: $fileDropTargeted, perform: receiveFiles)
         .background {
             GeometryReader { proxy in
                 Color.clear.preference(key: LibraryWidthKey.self, value: proxy.size.width)
@@ -518,6 +523,27 @@ struct ContentView: View {
                     .font(.callout).padding(.horizontal, 16).padding(.vertical, 9)
                     .background(.regularMaterial, in: Capsule())
                     .shadow(radius: 8, y: 3).padding(.bottom, 18)
+            }
+        }
+        .overlay {
+            if fileDropTargeted || importingFiles {
+                VStack(spacing: 10) {
+                    if importingFiles {
+                        ProgressView().controlSize(.small)
+                        Text("正在导入提示词…")
+                    } else {
+                        Image(systemName: "square.and.arrow.down")
+                            .font(.system(size: 26, weight: .light))
+                        Text("松开以导入提示词")
+                        Text("支持单个或多个 .md / .txt 文件")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .font(.callout.weight(.medium))
+                .padding(.horizontal, 28).padding(.vertical, 22)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .shadow(color: .black.opacity(0.08), radius: 12, y: 4)
+                .allowsHitTesting(false)
             }
         }
     }
@@ -619,7 +645,6 @@ struct ContentView: View {
                     ForEach(LibrarySort.allCases) { item in Text(item.rawValue).tag(item) }
                 }
                 Divider()
-                Button("导入 .md/.txt…") { importing = true }
                 Button("导出当前集合…") { exportCollection() }
             } label: { Image(systemName: "ellipsis") }
                 .menuStyle(.borderlessButton)
@@ -627,6 +652,18 @@ struct ContentView: View {
                 .frame(width: 29, height: 29)
                 .modifier(SubtleHoverSurface(selected: false))
                 .accessibilityLabel("更多操作")
+            Button(action: beginImport) {
+                Label("导入", systemImage: "square.and.arrow.down")
+                    .padding(.horizontal, 8)
+                    .frame(height: 29)
+                    .contentShape(RoundedRectangle(cornerRadius: 6))
+            }
+            .buttonStyle(.plain)
+            .modifier(SubtleHoverSurface(selected: false))
+            .fixedSize(horizontal: true, vertical: false)
+            .disabled(importingFiles)
+            .help("导入一个或多个 .md / .txt 文件")
+            .accessibilityLabel("导入提示词文件")
             Button(action: startCreate) { Image(systemName: "plus") }
                 .buttonStyle(.plain)
                 .frame(width: 29, height: 29)
@@ -684,7 +721,8 @@ struct ContentView: View {
             } else if collection != .trash {
                 HStack(spacing: 8) {
                     Button("新建 Prompt", action: startCreate).buttonStyle(.borderedProminent)
-                    Button("导入 .md/.txt") { importing = true }.buttonStyle(.bordered)
+                    Button("导入 .md/.txt", action: beginImport)
+                        .buttonStyle(.bordered).disabled(importingFiles)
                 }.padding(.top, 4)
             }
             Spacer()
@@ -822,37 +860,85 @@ struct ContentView: View {
         folderToPurge = nil
         perform { try PromptLibrary.purge(folder, in: context) }
     }
-    private func importFiles(_ result: Result<[URL], Error>) {
-        do {
-            let created = try PromptTextTransfer.importFiles(result.get(), into: context,
-                                                               folderID: selectedFolderID)
-            showToast("已导入 \(created.count) 个 Prompt")
-        } catch { errorMessage = error.localizedDescription }
+    private func beginImport() {
+        guard !importingFiles else { return }
+        importDestinationFolderID = selectedFolderID
+        importing = true
     }
-    private func receiveFiles(_ providers: [NSItemProvider]) -> Bool {
-        guard !providers.isEmpty else { return false }
-        Task { @MainActor in
-            var urls: [URL] = []
-            for provider in providers {
-                let url: URL? = await withCheckedContinuation { continuation in
-                    provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
-                        let resolved: URL?
-                        if let item = item as? URL { resolved = item }
-                        else if let data = item as? Data {
-                            resolved = URL(dataRepresentation: data, relativeTo: nil)
-                        } else if let text = item as? String {
-                            resolved = URL(string: text)
-                        } else { resolved = nil }
-                        continuation.resume(returning: resolved)
-                    }
-                }
-                guard let url else {
-                    errorMessage = "无法读取拖入的文件。"
-                    return
-                }
-                urls.append(url)
+
+    private func importFiles(_ result: Result<[URL], Error>, folderID: UUID?) {
+        switch result {
+        case .success(let urls):
+            guard !urls.isEmpty, !importingFiles else { return }
+            let libraryRevision = app.libraryRevision
+            importingFiles = true
+            Task { @MainActor in
+                defer { importingFiles = false }
+                do { try await completeImport(urls, folderID: folderID, libraryRevision: libraryRevision) }
+                catch { errorMessage = error.localizedDescription }
             }
-            importFiles(.success(urls))
+        case .failure(let error):
+            let failure = error as NSError
+            if failure.domain != NSCocoaErrorDomain || failure.code != NSUserCancelledError {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    @MainActor
+    private func completeImport(_ urls: [URL], folderID: UUID?, libraryRevision: Int) async throws {
+        let initialCollection = collection
+        let startedInLibrary = !creating && editingID == nil && !showingSettings
+        let files = try await Task.detached(priority: .userInitiated) {
+            try PromptTextTransfer.readAll(urls)
+        }.value
+        guard app.libraryRevision == libraryRevision else { return }
+        if let folderID, !activeFolders.contains(where: { $0.id == folderID }) {
+            throw PromptLibraryError.folderUnavailable
+        }
+        let created = try PromptTextTransfer.importTexts(files, into: context, folderID: folderID)
+        guard !created.isEmpty else { return }
+        if startedInLibrary, !creating, editingID == nil, !showingSettings,
+           collection == initialCollection {
+            searchTask?.cancel()
+            navigate(folderID.map(LibraryCollection.folder) ?? .all)
+            sort = .updated
+            selectedPromptID = created.first?.id
+        }
+        showToast("已导入 \(created.count) 个 Prompt")
+    }
+
+    private func receiveFiles(_ providers: [NSItemProvider]) -> Bool {
+        let fileProviders = providers.filter { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }
+        guard !fileProviders.isEmpty, !importingFiles else { return false }
+        let folderID = selectedFolderID
+        let libraryRevision = app.libraryRevision
+        importingFiles = true
+        Task { @MainActor in
+            defer { importingFiles = false }
+            do {
+                var urls: [URL] = []
+                for provider in fileProviders {
+                    let url: URL? = await withCheckedContinuation { continuation in
+                        provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                            let resolved: URL?
+                            if let item = item as? URL { resolved = item }
+                            else if let data = item as? Data {
+                                resolved = URL(dataRepresentation: data, relativeTo: nil)
+                            } else if let text = item as? String {
+                                resolved = URL(string: text)
+                            } else { resolved = nil }
+                            continuation.resume(returning: resolved)
+                        }
+                    }
+                    guard let url, url.isFileURL else {
+                        errorMessage = "无法读取拖入的文件。"
+                        return
+                    }
+                    urls.append(url)
+                }
+                try await completeImport(urls, folderID: folderID, libraryRevision: libraryRevision)
+            } catch { errorMessage = error.localizedDescription }
         }
         return true
     }
@@ -913,6 +999,7 @@ struct ContentView: View {
     }
     private func reorderDrop(_ providers: [NSItemProvider], before target: Prompt) -> Bool {
         guard sort == .manual, selectedTagID == nil, !searching,
+              !providers.contains(where: { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }),
               let provider = providers.first else { return false }
         _ = provider.loadObject(ofClass: NSString.self) { object, _ in
             guard let value = object as? String, value.hasPrefix("prompt:"),
@@ -953,3 +1040,15 @@ struct ContentView: View {
         }
     }
 }
+
+#if DEBUG
+#Preview("资料库 · 深色", traits: .fixedLayout(width: 1100, height: 720)) {
+    let container = try! PromptPersistence.makeContainer(inMemory: true)
+    ContentView()
+        .environmentObject(AppCoordinator(container: container))
+        .modelContainer(container)
+        .preferredColorScheme(.dark)
+        .environment(\.appAccentStyle, AppAccentStyle(palette: .monochrome, colorScheme: .dark))
+        .tint(AppAccentStyle(palette: .monochrome, colorScheme: .dark).tint)
+}
+#endif
