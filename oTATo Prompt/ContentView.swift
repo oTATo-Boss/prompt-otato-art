@@ -211,9 +211,18 @@ struct ContentView: View {
     }
 
     private var availableTags: [Tag] {
-        let ids = Set(basePrompts.flatMap { $0.tags.map(\.id) })
-        return tags.filter { ids.contains($0.id) }
-            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        var counts: [UUID: Int] = [:]
+        // Count the collection before applying a tag filter to keep the strip stable.
+        for prompt in basePrompts {
+            for id in Set(prompt.tags.map(\.id)) { counts[id, default: 0] += 1 }
+        }
+        return tags.filter { counts[$0.id] != nil }
+            .sorted {
+                let leftCount = counts[$0.id, default: 0]
+                let rightCount = counts[$1.id, default: 0]
+                if leftCount != rightCount { return leftCount > rightCount }
+                return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+            }
     }
 
     var body: some View {
