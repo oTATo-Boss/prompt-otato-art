@@ -114,6 +114,7 @@ private struct LibraryChip: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
+        .accessibilityValue(selected ? "已选择" : "未选择")
     }
 }
 
@@ -129,7 +130,8 @@ struct ContentView: View {
 
     @State private var collection: LibraryCollection = .all
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
-    @State private var selectedTagID: UUID?
+    @State private var libraryFilter = PromptLibraryFilter()
+    @State private var showingFilterPanel = false
     @State private var selectedPromptID: UUID?
     @State private var editingID: UUID?
     @State private var creating = false
@@ -205,27 +207,31 @@ struct ContentView: View {
     }
 
     private var shownPrompts: [Prompt] {
-        if searching { return basePrompts }
-        guard let selectedTagID else { return basePrompts }
-        return basePrompts.filter { prompt in prompt.tags.contains { $0.id == selectedTagID } }
+        libraryFilter.apply(to: basePrompts)
     }
 
-    private var availableTags: [Tag] {
+    private var availableTagOptions: [PromptTagFilterOption] {
         var counts: [UUID: Int] = [:]
-        // Count the collection before applying a tag filter to keep the strip stable.
+        // Count before applying filters so choosing a tag does not reorder the strip.
         for prompt in basePrompts {
             for id in Set(prompt.tags.map(\.id)) { counts[id, default: 0] += 1 }
         }
-        return tags.filter { counts[$0.id] != nil }
+        let selectedIDs = libraryFilter.selectedTagIDs.union(libraryFilter.excludedTagIDs)
+        return tags.filter { counts[$0.id] != nil || selectedIDs.contains($0.id) }
+            .map { PromptTagFilterOption(id: $0.id, name: $0.name, promptCount: counts[$0.id, default: 0]) }
             .sorted {
-                let leftCount = counts[$0.id, default: 0]
-                let rightCount = counts[$1.id, default: 0]
-                if leftCount != rightCount { return leftCount > rightCount }
+                if $0.promptCount != $1.promptCount { return $0.promptCount > $1.promptCount }
                 return $0.name.localizedStandardCompare($1.name) == .orderedAscending
             }
     }
 
-    var body: some View {
+    private var filterScopeTitle: String {
+        if searching { return "全部资料库的搜索结果" }
+        if let folder = selectedFolder { return "\(folder.name) · 含子文件夹" }
+        return collection.name
+    }
+
+    private var workspaceView: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             sidebar.navigationSplitViewColumnWidth(min: 220, ideal: 240, max: 280)
         } detail: {
@@ -252,6 +258,10 @@ struct ContentView: View {
             .frame(minWidth: 650, minHeight: 580)
         }
         .frame(minWidth: 900, minHeight: 620)
+    }
+
+    var body: some View {
+        workspaceView
         .fileImporter(isPresented: $importing,
                       allowedContentTypes: [.plainText, UTType(filenameExtension: "md") ?? .plainText],
                       allowsMultipleSelection: true) { result in
@@ -299,6 +309,14 @@ struct ContentView: View {
                 if !Task.isCancelled { settledSearch = value }
             }
         }
+        .onChange(of: Set(tags.map(\.id))) { _, ids in
+            libraryFilter.removeUnknownTags(validIDs: ids)
+        }
+        .onChange(of: libraryFilter) { _, _ in
+            if let id = selectedPromptID, !shownPrompts.contains(where: { $0.id == id }) {
+                selectedPromptID = nil
+            }
+        }
         .onChange(of: app.openPromptID) { _, id in
             guard let id, prompts.contains(where: { $0.id == id }) else { return }
             showingSettings = false
@@ -328,23 +346,7 @@ struct ContentView: View {
             navigate(target == .recentUse ? .recentUse : .favorites)
         }
         .onChange(of: selectedPromptID) { _, id in app.selectedPromptID = id }
-        .onAppear {
-            if let id = app.openPromptID, prompts.contains(where: { $0.id == id }) {
-                showingSettings = false
-                creating = false
-                editingID = id
-                app.openPromptID = nil
-            } else if app.createRequest > 0 {
-                app.createRequest = 0
-                startCreate()
-            } else if app.searchRequest > 0 {
-                app.searchRequest = 0
-                focusSearch()
-            } else if let target = app.collectionRequest {
-                app.collectionRequest = nil
-                navigate(target == .recentUse ? .recentUse : .favorites)
-            }
-        }
+        .onAppear(perform: handleInitialRequests)
         .onChange(of: prompts.count) { _, _ in
             Task { await PromptSearch.prepareIndex(activePrompts, folders: activeFolders) }
         }
@@ -362,6 +364,24 @@ struct ContentView: View {
 
     private var detailHeaderInset: CGFloat {
         columnVisibility == .detailOnly ? 136 : 20
+    }
+
+    private func handleInitialRequests() {
+        if let id = app.openPromptID, prompts.contains(where: { $0.id == id }) {
+            showingSettings = false
+            creating = false
+            editingID = id
+            app.openPromptID = nil
+        } else if app.createRequest > 0 {
+            app.createRequest = 0
+            startCreate()
+        } else if app.searchRequest > 0 {
+            app.searchRequest = 0
+            focusSearch()
+        } else if let target = app.collectionRequest {
+            app.collectionRequest = nil
+            navigate(target == .recentUse ? .recentUse : .favorites)
+        }
     }
 
     private var sidebar: some View {
@@ -462,12 +482,17 @@ struct ContentView: View {
         VStack(spacing: 0) {
             header
             if searching { searchScopes }
-            else if collection != .trash { tagStrip }
+            tagStrip
+            if libraryFilter.isActive {
+                PromptActiveFilterSummary(filter: $libraryFilter, tags: availableTagOptions)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 8)
+            }
             Divider()
-            if shownPrompts.isEmpty && (collection != .trash || searching || trashedFolderRoots.isEmpty) { emptyState }
+            if shownPrompts.isEmpty && (collection != .trash || searching || libraryFilter.isActive || trashedFolderRoots.isEmpty) { emptyState }
             else {
                 ScrollView {
-                    if collection == .trash && !searching && !trashedFolderRoots.isEmpty {
+                    if collection == .trash && !searching && !libraryFilter.isActive && !trashedFolderRoots.isEmpty {
                         trashedFolderSection
                     }
                     if viewMode == "list" {
@@ -616,7 +641,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(searching ? "搜索结果" : (selectedFolder?.name ?? collection.name))
                     .font(.system(size: 19, weight: .semibold)).lineLimit(1)
-                Text(collection == .trash && !searching
+                Text(collection == .trash && !searching && !libraryFilter.isActive
                      ? "\(shownPrompts.count) 个提示词 · \(trashedFolderRoots.count) 个文件夹"
                      : "\(shownPrompts.count) 个提示词")
                     .font(.caption).foregroundStyle(.secondary)
@@ -687,15 +712,59 @@ struct ContentView: View {
     }
 
     private var tagStrip: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 7) {
-                chip("全部", selected: selectedTagID == nil) { selectedTagID = nil }
-                ForEach(availableTags) { tag in
-                    chip(tag.name, selected: selectedTagID == tag.id) { selectedTagID = tag.id }
+        HStack(spacing: 12) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 7) {
+                    chip("全部", selected: libraryFilter.selectedTagIDs.isEmpty &&
+                         libraryFilter.excludedTagIDs.isEmpty && libraryFilter.tagPresence == .any) {
+                        libraryFilter.clearTags()
+                    }
+                    ForEach(availableTagOptions) { tag in
+                        let excluded = libraryFilter.excludedTagIDs.contains(tag.id)
+                        chip(excluded ? "− \(tag.name)" : tag.name,
+                             selected: excluded || libraryFilter.selectedTagIDs.contains(tag.id)) {
+                            if excluded { libraryFilter.toggleExcludedTag(tag.id) }
+                            else { libraryFilter.toggleTag(tag.id) }
+                        }
+                        .help("\(tag.promptCount) 个提示词；点击选择或取消，右键可排除")
+                        .contextMenu {
+                            Button(excluded ? "取消排除此标签" : "排除此标签") {
+                                libraryFilter.toggleExcludedTag(tag.id)
+                            }
+                        }
+                    }
                 }
+                .padding(.vertical, 2)
             }
-            .padding(.horizontal, 20).padding(.vertical, 8)
+            Button { showingFilterPanel.toggle() } label: {
+                HStack(spacing: 5) {
+                    Label("筛选", systemImage: "line.3.horizontal.decrease")
+                    if libraryFilter.isActive {
+                        Text(libraryFilter.activeCriterionCount.formatted())
+                            .font(.system(size: 10, weight: .semibold).monospacedDigit())
+                            .foregroundStyle(accent.selectedForeground)
+                            .padding(.horizontal, 5)
+                            .frame(minWidth: 17, minHeight: 17)
+                            .background(accent.selectedFill, in: Capsule())
+                    }
+                }
+                .font(.system(size: 11))
+                .padding(.horizontal, 8)
+                .frame(height: 29)
+                .contentShape(RoundedRectangle(cornerRadius: 6))
+            }
+            .buttonStyle(.plain)
+            .modifier(SubtleHoverSurface(selected: libraryFilter.isActive))
+            .fixedSize()
+            .accessibilityLabel("筛选提示词")
+            .accessibilityValue(libraryFilter.isActive ? "\(libraryFilter.activeCriterionCount) 个条件" : "未筛选")
+            .popover(isPresented: $showingFilterPanel, arrowEdge: .bottom) {
+                PromptFilterPanel(filter: $libraryFilter, tags: availableTagOptions,
+                                  resultCount: shownPrompts.count, scopeTitle: filterScopeTitle,
+                                  onDone: { showingFilterPanel = false })
+            }
         }
+        .padding(.horizontal, 20).padding(.vertical, 6)
     }
 
     private var searchScopes: some View {
@@ -725,9 +794,16 @@ struct ContentView: View {
                     collection == .trash ? "trash" : "square.stack")
                 .font(.system(size: 36, weight: .ultraLight)).foregroundStyle(.tertiary)
             Text(emptyTitle).font(.system(size: 16, weight: .semibold))
-            Text(searching ? "试试其他关键词或切换搜索范围。" : "用 Prompt 开始整理你的灵感与工作流程。")
+            Text(libraryFilter.isActive ? "调整标签或其他条件，或清除筛选。" :
+                 searching ? "试试其他关键词或切换搜索范围。" : "用 Prompt 开始整理你的灵感与工作流程。")
                 .font(.callout).foregroundStyle(.secondary)
-            if searching {
+            if libraryFilter.isActive {
+                HStack(spacing: 8) {
+                    Button("清除筛选") { libraryFilter.reset() }
+                        .buttonStyle(.borderedProminent)
+                    if searching { Button("清除搜索") { searchText = "" } }
+                }
+            } else if searching {
                 Button("清除搜索") { searchText = "" }
             } else if collection != .trash {
                 HStack(spacing: 8) {
@@ -741,6 +817,7 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     private var emptyTitle: String {
+        if libraryFilter.isActive { return "没有符合筛选条件的提示词" }
         if searching { return "没有找到匹配的提示词" }
         switch collection {
         case .favorites: return "收藏常用 Prompt 后会出现在这里"
@@ -783,7 +860,8 @@ struct ContentView: View {
 
     private func navigate(_ target: LibraryCollection) {
         showingSettings = false; creating = false; editingID = nil; collection = target
-        selectedTagID = nil; selectedPromptID = nil; searchText = ""; settledSearch = ""
+        libraryFilter.reset(); showingFilterPanel = false
+        selectedPromptID = nil; searchText = ""; settledSearch = ""
     }
     private func open(_ prompt: Prompt) {
         guard prompt.deletedAt == nil else { return }
@@ -823,7 +901,8 @@ struct ContentView: View {
             searchTask?.cancel()
             searchText = ""
             settledSearch = ""
-            selectedTagID = nil
+            libraryFilter.reset()
+            showingFilterPanel = false
             collection = folderID.map(LibraryCollection.folder) ?? .all
             sort = .updated
             creating = false
@@ -1009,7 +1088,7 @@ struct ContentView: View {
         return true
     }
     private func reorderDrop(_ providers: [NSItemProvider], before target: Prompt) -> Bool {
-        guard sort == .manual, selectedTagID == nil, !searching,
+        guard sort == .manual, !libraryFilter.isActive, !searching,
               !providers.contains(where: { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }),
               let provider = providers.first else { return false }
         _ = provider.loadObject(ofClass: NSString.self) { object, _ in
