@@ -47,6 +47,10 @@ struct NativeTextEditor: NSViewRepresentable {
         editor.isAutomaticTextReplacementEnabled = false
         editor.usesFindBar = true
         editor.drawsBackground = false
+        editor.wantsLayer = true
+        // Keep laid-out text in its backing layer while scrolling. TextKit
+        // only needs to lay out newly visible paragraphs of a long prompt.
+        editor.layoutManager?.allowsNonContiguousLayout = true
         editor.focusRingType = .none
         editor.textContainerInset = NSSize(width: 15, height: 14)
         editor.font = .systemFont(ofSize: CGFloat(fontSize))
@@ -92,20 +96,26 @@ struct NativeTextEditor: NSViewRepresentable {
     }
 
     private func configure(_ editor: NSTextView, in scroll: NSScrollView) {
-        scroll.hasHorizontalScroller = !wrapLines
-        editor.isHorizontallyResizable = !wrapLines
-        editor.isVerticallyResizable = true
-        editor.autoresizingMask = wrapLines ? [.width] : []
-        editor.minSize = NSSize(width: 0, height: 0)
-        editor.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude,
-                                height: CGFloat.greatestFiniteMagnitude)
-        editor.textContainer?.widthTracksTextView = wrapLines
-        editor.textContainer?.heightTracksTextView = false
-        editor.textContainer?.containerSize = NSSize(
-            width: wrapLines ? max(scroll.contentSize.width, 1) : CGFloat.greatestFiniteMagnitude,
+        // AppKit setters can invalidate text layout even when their value is
+        // unchanged. Parent-view updates must not reconfigure the whole editor.
+        if scroll.hasHorizontalScroller != !wrapLines { scroll.hasHorizontalScroller = !wrapLines }
+        if editor.isHorizontallyResizable != !wrapLines { editor.isHorizontallyResizable = !wrapLines }
+        if !editor.isVerticallyResizable { editor.isVerticallyResizable = true }
+        let mask: NSView.AutoresizingMask = wrapLines ? [.width] : []
+        if editor.autoresizingMask != mask { editor.autoresizingMask = mask }
+        if editor.minSize != .zero { editor.minSize = .zero }
+        let maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        if editor.maxSize != maxSize { editor.maxSize = maxSize }
+        guard let container = editor.textContainer else { return }
+        if container.widthTracksTextView != wrapLines { container.widthTracksTextView = wrapLines }
+        if container.heightTracksTextView { container.heightTracksTextView = false }
+        let width = max(scroll.contentSize.width, 1)
+        let size = NSSize(
+            width: wrapLines ? width : CGFloat.greatestFiniteMagnitude,
             height: CGFloat.greatestFiniteMagnitude
         )
-        if wrapLines { editor.frame.size.width = max(scroll.contentSize.width, 1) }
+        if container.containerSize != size { container.containerSize = size }
+        if wrapLines, editor.frame.size.width != width { editor.frame.size.width = width }
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate, NSTextStorageDelegate, NSLayoutManagerDelegate {

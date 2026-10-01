@@ -21,7 +21,9 @@ struct NativeTagStrip: NSViewRepresentable {
         scroll.focusRingType = .none
         scroll.wantsLayer = true
         scroll.contentView.wantsLayer = true
-        scroll.documentView = NativeTagDocumentView()
+        let document = NativeTagDocumentView()
+        document.wantsLayer = true
+        scroll.documentView = document
         context.coordinator.update(scroll, accent: accent)
         return scroll
     }
@@ -82,7 +84,7 @@ struct NativeTagStrip: NSViewRepresentable {
                 if let menuItem = button.menu?.items.first {
                     menuItem.title = excluded ? "取消排除此标签" : "排除此标签"
                 }
-                button.needsDisplay = true
+                button.refreshTitle()
             }
             lastFilter = parent.filter
             lastPalette = accent.palette
@@ -96,6 +98,7 @@ struct NativeTagStrip: NSViewRepresentable {
             button.title = name
             button.font = button.tagFont
             button.isBordered = false
+            button.wantsLayer = true
             button.focusRingType = .none
             button.setButtonType(.momentaryPushIn)
             button.target = self
@@ -158,14 +161,28 @@ private final class NativeTagButton: NSButton {
     var hoverFill = NSColor.unemphasizedSelectedContentBackgroundColor.withAlphaComponent(0.65)
     private var hovering = false
     private var hoverTracking: NSTrackingArea?
+    private var renderedTitle = NSAttributedString()
+    private var titleSize = NSSize.zero
+
+    func refreshTitle() {
+        renderedTitle = NSAttributedString(string: title, attributes: [
+            .font: tagFont,
+            .foregroundColor: selected ? selectedText : NSColor.labelColor
+        ])
+        titleSize = renderedTitle.size()
+        needsDisplay = true
+    }
 
     override func updateTrackingAreas() {
-        if let hoverTracking { removeTrackingArea(hoverTracking) }
-        let tracking = NSTrackingArea(rect: .zero,
-                                      options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
-                                      owner: self, userInfo: nil)
-        addTrackingArea(tracking)
-        hoverTracking = tracking
+        // .inVisibleRect is maintained by AppKit as the clip view moves. Do not
+        // destroy and recreate every tag's tracking area on each scroll frame.
+        if hoverTracking == nil {
+            let tracking = NSTrackingArea(rect: .zero,
+                                          options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+                                          owner: self, userInfo: nil)
+            addTrackingArea(tracking)
+            hoverTracking = tracking
+        }
         super.updateTrackingAreas()
     }
 
@@ -176,12 +193,8 @@ private final class NativeTagButton: NSButton {
         let capsule = NSBezierPath(roundedRect: bounds, xRadius: bounds.height / 2, yRadius: bounds.height / 2)
         (selected ? selectedFill : hovering ? hoverFill : neutralFill).setFill()
         capsule.fill()
-        let text = NSAttributedString(string: title, attributes: [
-            .font: tagFont,
-            .foregroundColor: selected ? selectedText : NSColor.labelColor
-        ])
-        let size = text.size()
-        text.draw(at: NSPoint(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2))
+        renderedTitle.draw(at: NSPoint(x: (bounds.width - titleSize.width) / 2,
+                                      y: (bounds.height - titleSize.height) / 2))
         if window?.firstResponder === self {
             focusColor.withAlphaComponent(0.35).setStroke()
             let ring = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 12, yRadius: 12)

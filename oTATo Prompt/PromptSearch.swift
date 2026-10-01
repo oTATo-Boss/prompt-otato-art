@@ -14,7 +14,7 @@ enum PromptSearch {
         case trash
     }
 
-    private struct IndexedText {
+    private struct IndexedText: Sendable {
         let updatedAt: Date
         let folderID: UUID?
         let title: String
@@ -34,37 +34,51 @@ enum PromptSearch {
 
     private static var index: [UUID: IndexedText] = [:]
     private static var folderSignature: Int?
-    private static let searchLocale = Locale(identifier: "en_US_POSIX")
+    private static var preparationGeneration = 0
+    private nonisolated static let searchLocale = Locale(identifier: "en_US_POSIX")
 
     static func invalidate(_ prompt: Prompt) {
         index.removeValue(forKey: prompt.id)
+        preparationGeneration += 1
     }
 
     static func clearIndex() {
         index.removeAll()
         folderSignature = nil
+        preparationGeneration += 1
     }
 
-    /// Call after the library first loads to spread cold indexing across run-loop turns.
+    /// Read SwiftData on its actor in small batches; fold long bodies off the
+    /// main thread so cold search preparation cannot occupy a whole frame.
     static func prepareIndex(_ prompts: [Prompt], folders: [Folder] = []) async {
         let folderNames = Dictionary(folders.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
         updateFolderCache(for: folders, names: folderNames)
-        for (offset, prompt) in prompts.enumerated() {
-            if Task.isCancelled { return }
-            let id = prompt.id
-            let updatedAt = prompt.updatedAt
-            if index[id]?.updatedAt != updatedAt {
-                let folderID = prompt.folderID
-                index[id] = IndexedText(
-                    updatedAt: updatedAt,
-                    folderID: folderID,
-                    title: normalized(prompt.title),
-                    tags: normalized(prompt.tagNames.joined(separator: " ")),
-                    content: normalized(prompt.content),
-                    folder: normalized(folderID.flatMap { folderNames[$0] } ?? "")
-                )
+        let generation = preparationGeneration
+        await Task.yield()
+        for start in stride(from: 0, to: prompts.count, by: 4) {
+            if Task.isCancelled || generation != preparationGeneration { return }
+            var batch: [(UUID, IndexedText)] = []
+            for prompt in prompts[start..<min(start + 4, prompts.count)] where index[prompt.id]?.updatedAt != prompt.updatedAt {
+                batch.append((prompt.id, IndexedText(updatedAt: prompt.updatedAt,
+                    folderID: prompt.folderID, title: prompt.title,
+                    tags: prompt.tagNames.joined(separator: " "), content: prompt.content,
+                    folder: prompt.folderID.flatMap { folderNames[$0] } ?? "")))
             }
-            if offset.isMultiple(of: 128) { await Task.yield() }
+            guard !batch.isEmpty else { continue }
+            let inputs = batch
+            let worker = Task.detached(priority: .utility) {
+                inputs.map { id, text in
+                    (id, IndexedText(updatedAt: text.updatedAt, folderID: text.folderID,
+                        title: normalized(text.title), tags: normalized(text.tags),
+                        content: normalized(text.content), folder: normalized(text.folder)))
+                }
+            }
+            let prepared = await withTaskCancellationHandler {
+                await worker.value
+            } onCancel: { worker.cancel() }
+            if Task.isCancelled || generation != preparationGeneration { return }
+            for (id, text) in prepared { index[id] = text }
+            await Task.yield()
         }
     }
 
@@ -177,7 +191,7 @@ enum PromptSearch {
         return ranked.map(\.prompt)
     }
 
-    private static func normalized(_ text: String) -> String {
+    private nonisolated static func normalized(_ text: String) -> String {
         text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: searchLocale)
     }
 
@@ -195,6 +209,7 @@ enum PromptSearch {
         }
         let signature = hasher.finalize()
         guard folderSignature != signature else { return }
+        preparationGeneration += 1
         index = index.mapValues { item in
             var updated = item
             updated.folder = normalized(item.folderID.flatMap { names[$0] } ?? "")

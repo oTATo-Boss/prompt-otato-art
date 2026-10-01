@@ -12,6 +12,7 @@ import SwiftUI
 
 @main
 struct oTATo_PromptApp: App {
+    @NSApplicationDelegateAdaptor(AppLifetimeDelegate.self) private var lifetime
     private let app: AppCoordinator
     private let launchError: String?
 
@@ -33,7 +34,7 @@ struct oTATo_PromptApp: App {
     var body: some Scene {
         WindowGroup("oTATo prompt", id: "main") {
             if launchError == nil {
-                RootWindowView(app: app)
+                RootWindowView(app: app, lifetime: lifetime)
                     .modelContainer(app.container)
             } else {
                 StoreFailureView(message: launchError ?? "无法打开本地资料库。")
@@ -84,16 +85,37 @@ struct oTATo_PromptApp: App {
 private struct RootWindowView: View {
     @Environment(\.openWindow) private var openWindow
     @ObservedObject var app: AppCoordinator
+    @ObservedObject private var startup: AppStartupState
+    let lifetime: AppLifetimeDelegate
+
+    init(app: AppCoordinator, lifetime: AppLifetimeDelegate) {
+        self.app = app
+        startup = app.startup
+        self.lifetime = lifetime
+    }
 
     var body: some View {
-        ContentView()
+        ZStack {
+            ContentView()
+                .disabled(!startup.isReady)
+                .accessibilityHidden(!startup.isReady)
+            if !startup.isReady {
+                StartupLoadingView(startup: startup) { startup.prepare(in: app.container) }
+            }
+        }
             .environmentObject(app)
             .frame(minWidth: 900, minHeight: 620)
             .modifier(AppAppearanceModifier())
             .applyAppAccent()
+            .background(StartupWindowAttachment(app: app))
+            .toolbar(startup.isReady ? .visible : .hidden, for: .windowToolbar)
             .onAppear {
-                app.openWindowAction = { openWindow(id: "main") }
+                lifetime.coordinator = app
+                app.openWindowAction = {
+                    if !app.reopenMainWindow() { openWindow(id: "main") }
+                }
                 app.start()
+                startup.prepare(in: app.container)
             }
     }
 }

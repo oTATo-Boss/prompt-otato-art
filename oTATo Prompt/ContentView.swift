@@ -71,11 +71,6 @@ private struct SidebarFolderNode: View {
     }
 }
 
-private struct LibraryWidthKey: PreferenceKey {
-    static var defaultValue: CGFloat = 900
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
-}
-
 private struct SearchFocusBoundary: NSViewRepresentable {
     let isFocused: Bool
     let onOutsideClick: () -> Void
@@ -397,9 +392,13 @@ struct ContentView: View {
         .onChange(of: selectedPromptID) { _, id in app.selectedPromptID = id }
         .onAppear(perform: handleInitialRequests)
         .onChange(of: prompts.count) { _, _ in
-            Task { await PromptSearch.prepareIndex(activePrompts, folders: activeFolders) }
+            if app.startup.isReady {
+                Task { await PromptSearch.prepareIndex(activePrompts, folders: activeFolders) }
+            }
         }
-        .task { await PromptSearch.prepareIndex(activePrompts, folders: activeFolders) }
+        .task {
+            if app.startup.isReady { await PromptSearch.prepareIndex(activePrompts, folders: activeFolders) }
+        }
         .overlay(alignment: .bottom) {
             if let value = app.toastText {
                 Label(value, systemImage: value == "已复制" ? "checkmark.circle.fill" : "info.circle")
@@ -517,39 +516,71 @@ struct ContentView: View {
         VStack(spacing: 0) {
             if shownPrompts.isEmpty && (collection != .trash || searching || libraryFilter.isActive || trashedFolderRoots.isEmpty) { emptyState }
             else {
-                ScrollView {
-                    if collection == .trash && !searching && !libraryFilter.isActive && !trashedFolderRoots.isEmpty {
-                        trashedFolderSection
-                    }
-                    if viewMode == "list" {
-                        LazyVStack(spacing: 1) {
-                            ForEach(shownPrompts) { prompt in
-                                PromptListRow(prompt: prompt, folderName: folderName(prompt.folderID),
-                                              selected: selectedPromptID == prompt.id,
-                                              onSelect: { selectedPromptID = prompt.id },
-                                              onOpen: { open(prompt) },
-                                              onCopy: { app.requestCopy(prompt) },
-                                              onFavorite: { toggleFavorite(prompt) })
-                                    .contextMenu { cardMenu(prompt) }
-                                    .onDrag { NSItemProvider(object: "prompt:\(prompt.id.uuidString)" as NSString) }
+                Group {
+                    if viewMode == "grid" && (collection != .trash || searching || libraryFilter.isActive || trashedFolderRoots.isEmpty) {
+                        GeometryReader { geometry in
+                            NativePromptGrid(prompts: shownPrompts, minimumWidth: cardMinimumWidth,
+                                             topInset: geometry.frame(in: .global).minY, selection: selectedPromptID) { prompt in
+                                AnyView(
+                                    PromptCardView(prompt: prompt, selected: selectedPromptID == prompt.id,
+                                                   onSelect: { selectedPromptID = prompt.id },
+                                                   onOpen: { open(prompt) },
+                                                   onCopy: { app.requestCopy(prompt) },
+                                                   onFavorite: { toggleFavorite(prompt) })
+                                        .contextMenu { cardMenu(prompt) }
+                                        .onDrag { NSItemProvider(object: "prompt:\(prompt.id.uuidString)" as NSString) }
+                                )
                             }
+                            .overlay(alignment: .top) {
+                                // SwiftUI scroll-edge effects do not discover an AppKit
+                                // scroll view. Keep the same soft header edge over its layers.
+                                LinearGradient(stops: [
+                                    .init(color: Color(nsColor: .windowBackgroundColor), location: 0),
+                                    .init(color: Color(nsColor: .windowBackgroundColor),
+                                          location: geometry.frame(in: .global).minY / max(1, geometry.frame(in: .global).minY + 12)),
+                                    .init(color: Color(nsColor: .windowBackgroundColor).opacity(0), location: 1)
+                                ], startPoint: .top, endPoint: .bottom)
+                                .frame(height: geometry.frame(in: .global).minY + 12)
+                                .allowsHitTesting(false)
+                                .accessibilityHidden(true)
+                            }
+                            .ignoresSafeArea(.container, edges: .top)
                         }
-                        .padding(.horizontal, 20).padding(.vertical, 12)
                     } else {
-                        LazyVGrid(columns: gridColumns, spacing: 16) {
-                            ForEach(shownPrompts) { prompt in
-                                PromptCardView(prompt: prompt, selected: selectedPromptID == prompt.id,
-                                               onSelect: { selectedPromptID = prompt.id },
-                                               onOpen: { open(prompt) },
-                                               onCopy: { app.requestCopy(prompt) },
-                                               onFavorite: { toggleFavorite(prompt) })
-                                    .contextMenu { cardMenu(prompt) }
-                                    .onDrag { NSItemProvider(object: "prompt:\(prompt.id.uuidString)" as NSString) }
+                        ScrollView {
+                            if collection == .trash && !searching && !libraryFilter.isActive && !trashedFolderRoots.isEmpty {
+                                trashedFolderSection
+                            }
+                            if viewMode == "list" {
+                                LazyVStack(spacing: 1) {
+                                    ForEach(shownPrompts) { prompt in
+                                        PromptListRow(prompt: prompt, folderName: folderName(prompt.folderID),
+                                                      selected: selectedPromptID == prompt.id,
+                                                      onSelect: { selectedPromptID = prompt.id },
+                                                      onOpen: { open(prompt) },
+                                                      onCopy: { app.requestCopy(prompt) },
+                                                      onFavorite: { toggleFavorite(prompt) })
+                                            .contextMenu { cardMenu(prompt) }
+                                            .onDrag { NSItemProvider(object: "prompt:\(prompt.id.uuidString)" as NSString) }
+                                    }
+                                }
+                                .padding(.horizontal, 20).padding(.vertical, 12)
+                            } else {
+                                LazyVGrid(columns: [GridItem(.adaptive(minimum: cardMinimumWidth,
+                                                                      maximum: cardMinimumWidth + 45), spacing: 16)], spacing: 16) {
+                                    ForEach(shownPrompts) { prompt in
+                                        PromptCardView(prompt: prompt, selected: selectedPromptID == prompt.id,
+                                                       onSelect: { selectedPromptID = prompt.id },
+                                                       onOpen: { open(prompt) },
+                                                       onCopy: { app.requestCopy(prompt) },
+                                                       onFavorite: { toggleFavorite(prompt) })
+                                            .contextMenu { cardMenu(prompt) }
+                                            .onDrag { NSItemProvider(object: "prompt:\(prompt.id.uuidString)" as NSString) }
+                                    }
+                                }
+                                .padding(.horizontal, 20).padding(.top, 15).padding(.bottom, 20)
                             }
                         }
-                        .padding(.horizontal, 20)
-                        .padding(.top, 15)
-                        .padding(.bottom, 20)
                     }
                 }
                 .appScrollEdge()
@@ -579,10 +610,11 @@ struct ContentView: View {
         .onDrop(of: [.fileURL], isTargeted: $fileDropTargeted, perform: receiveFiles)
         .background {
             GeometryReader { proxy in
-                Color.clear.preference(key: LibraryWidthKey.self, value: proxy.size.width)
+                Color.clear
+                    .onAppear { libraryWidth = proxy.size.width }
+                    .onChange(of: proxy.size.width) { _, width in libraryWidth = width }
             }
         }
-        .onPreferenceChange(LibraryWidthKey.self) { libraryWidth = $0 }
         .onAppear {
             // Keep the library keyboard-ready without giving the search field
             // its prominent AppKit focus ring on every window opening.
@@ -622,10 +654,6 @@ struct ContentView: View {
                 .allowsHitTesting(false)
             }
         }
-    }
-
-    private var gridColumns: [GridItem] {
-        [GridItem(.adaptive(minimum: cardMinimumWidth, maximum: cardMinimumWidth + 45), spacing: 16)]
     }
 
     private var trashedFolderSection: some View {

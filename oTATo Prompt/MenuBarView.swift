@@ -186,15 +186,11 @@ struct MenuBarView: View {
             app.requestCopy(prompt, source: .menuBar)
         } label: {
             HStack(spacing: 10) {
-                Group {
-                    if let cover = PromptPresentation.croppedImage(for: prompt) {
-                        Image(nsImage: cover).resizable().scaledToFit()
-                    } else {
-                        Image(systemName: "doc.richtext")
-                            .font(.system(size: 19))
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
+                CoverThumbnail(prompt: prompt, maxPixelSize: 192) {
+                    Image(systemName: "doc.richtext")
+                        .font(.system(size: 19))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 .frame(width: 56, height: 31.5)
                 .background(Color(nsColor: .textBackgroundColor))

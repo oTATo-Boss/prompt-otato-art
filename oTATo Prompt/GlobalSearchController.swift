@@ -506,20 +506,15 @@ private struct GlobalSearchView: View {
 
     @ViewBuilder
     private func cover(for prompt: Prompt) -> some View {
-        if let image = PromptPresentation.croppedImage(for: prompt) {
-            Image(nsImage: image)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 88, height: 49.5)
-                .background(.primary.opacity(0.065))
-                .clipShape(RoundedRectangle(cornerRadius: 7))
-        } else {
+        CoverThumbnail(prompt: prompt, maxPixelSize: 192) {
             Image(systemName: "doc.text")
                 .font(.system(size: 23, weight: .ultraLight))
                 .foregroundStyle(.secondary)
-                .frame(width: 88, height: 49.5)
-                .background(.primary.opacity(0.065), in: RoundedRectangle(cornerRadius: 7))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .frame(width: 88, height: 49.5)
+        .background(.primary.opacity(0.065))
+        .clipShape(RoundedRectangle(cornerRadius: 7))
     }
 
     private func keycap(_ title: String) -> some View {

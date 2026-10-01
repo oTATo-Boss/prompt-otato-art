@@ -22,6 +22,7 @@ enum CopyError: LocalizedError {
 @MainActor
 final class AppCoordinator: NSObject, ObservableObject {
     let container: ModelContainer
+    let startup = AppStartupState()
     let updater = UpdaterService()
     private let isPreview = ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
 
@@ -52,6 +53,8 @@ final class AppCoordinator: NSObject, ObservableObject {
     private var globalSearchController: GlobalSearchController?
     private var hotkeyManager: GlobalHotKeyManager?
     private var started = false
+    private var mainWindow: NSWindow?
+    private var mainWindowDelegate: MainWindowRetentionDelegate?
 
     init(container: ModelContainer) {
         self.container = container
@@ -75,6 +78,23 @@ final class AppCoordinator: NSObject, ObservableObject {
             self?.globalSearchController?.toggle()
         }
         reloadGlobalHotkey()
+    }
+
+    func retainMainWindow(_ window: NSWindow) {
+        guard mainWindow !== window else { return }
+        mainWindow = window
+        let delegate = MainWindowRetentionDelegate(forwarding: window.delegate)
+        mainWindowDelegate = delegate
+        window.delegate = delegate
+        window.isReleasedWhenClosed = false
+    }
+
+    @discardableResult
+    func reopenMainWindow() -> Bool {
+        guard let mainWindow else { return false }
+        if mainWindow.isMiniaturized { mainWindow.deminiaturize(nil) }
+        mainWindow.makeKeyAndOrderFront(nil)
+        return true
     }
 
     func reloadGlobalHotkey() {
