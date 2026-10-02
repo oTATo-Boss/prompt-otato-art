@@ -11,33 +11,46 @@ final class AppStartupState: ObservableObject {
     @Published private(set) var status = "正在准备资料库…"
     @Published private(set) var error: String?
     private var preparation: Task<Void, Never>?
+    private var backgroundPreparation: Task<Void, Never>?
     private var dataPrepared = false
     private var layoutPrepared = false
 
     func prepare(in container: ModelContainer) {
         guard !isReady, preparation == nil else { return }
         error = nil
-        preparation = Task {
+        preparation = Task { [self] in
             do {
                 let context = container.mainContext
                 let prompts = try context.fetch(FetchDescriptor<Prompt>()).filter { $0.deletedAt == nil }
                 let folders = try context.fetch(FetchDescriptor<Folder>()).filter { $0.deletedAt == nil }
-                progress = 0.1
-                status = "正在准备搜索索引…"
-                await PromptSearch.prepareIndex(prompts, folders: folders)
-
                 let sort = PromptLibrarySort(rawValue: UserDefaults.standard.string(forKey: "library.sort") ?? "") ?? .updated
-                let requests = thumbnailWorkingSet(sort.sorted(prompts))
-                progress = 0.3
-                status = "正在预载封面…"
+                let ordered = sort.sorted(prompts)
+                PromptSearch.pruneIndex(keeping: Set(prompts.map(\.id)))
+                // Prepare enough for the largest supported first viewport; large
+                // libraries do not delay opening while every body is indexed.
+                let initial = Array(ordered.prefix(32))
+                async let initialIndex: Void = PromptSearch.prepareIndex(initial, folders: folders)
+                let pixels = UserDefaults.standard.string(forKey: "library.viewMode") == "list" ? [192] : [768, 192]
+                let requests = thumbnailWorkingSet(initial, pixelSizes: pixels)
+                progress = 0.1
+                status = "正在准备首屏与封面…"
                 await CoverThumbnailCache.shared.preload(requests) { completed, total in
                     // Updating the loading label should not invalidate the entire library.
-                    let next = 0.3 + 0.65 * Double(completed) / Double(max(1, total))
+                    let next = 0.1 + 0.85 * Double(completed) / Double(max(1, total))
                     if next - self.progress >= 0.02 || completed == total { self.progress = next }
                 }
+                await initialIndex
                 dataPrepared = true
                 status = "正在准备界面…"
                 finishIfPrepared()
+                // The remaining work yields in small batches and shares both cache
+                // budgets. It finishes once; hiding the window adds no timer or loop.
+                backgroundPreparation = Task(priority: .utility) { [weak self] in
+                    guard let self else { return }
+                    await PromptSearch.prepareIndex(ordered, folders: folders)
+                    guard !Task.isCancelled else { return }
+                    await CoverThumbnailCache.shared.preload(self.thumbnailWorkingSet(ordered)) { _, _ in }
+                }
             } catch {
                 self.error = error.localizedDescription
                 preparation = nil
@@ -57,14 +70,19 @@ final class AppStartupState: ObservableObject {
         preparation = nil
     }
 
-    private func thumbnailWorkingSet(_ prompts: [Prompt]) -> [CoverThumbnailRequest] {
+    func cancelBackgroundPreparation() {
+        backgroundPreparation?.cancel()
+        backgroundPreparation = nil
+    }
+
+    private func thumbnailWorkingSet(_ prompts: [Prompt], pixelSizes: [Int] = [768, 192]) -> [CoverThumbnailRequest] {
         // Keep startup bounded for very large libraries. Reserve room for visible
         // cells and detail covers inside the shared 96 MiB decoded-image cache.
         var requests: [CoverThumbnailRequest] = []
         var seen: Set<CoverThumbnailRequest> = []
         var bytes = 0
         for prompt in prompts {
-            for pixels in [768, 192] {
+            for pixels in pixelSizes {
                 guard let request = CoverThumbnailRequest(prompt: prompt, maxPixelSize: pixels),
                       !seen.contains(request) else { continue }
                 let width = Double(max(1, prompt.coverWidth ?? pixels))

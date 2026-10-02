@@ -26,7 +26,8 @@ struct NativePromptGrid: NSViewRepresentable {
     let prompts: [Prompt]
     let minimumWidth: CGFloat
     var topInset: CGFloat = 0
-    let selection: UUID?
+    let selection: Set<UUID>
+    var searchQuery = ""
     let card: (Prompt) -> AnyView
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -73,16 +74,19 @@ struct NativePromptGrid: NSViewRepresentable {
         static let itemIdentifier = NSUserInterfaceItemIdentifier("PromptCard")
         private var parent: NativePromptGrid
         private var ids: [UUID] = []
-        private var selection: UUID?
+        private var selection: Set<UUID> = []
+        private var searchQuery = ""
         private var accent: AppAccentStyle?
 
         init(_ parent: NativePromptGrid) { self.parent = parent }
 
         func update(_ collection: NSCollectionView, parent: NativePromptGrid) {
             let oldSelection = selection
+            let changedSearch = searchQuery != parent.searchQuery
             let changedAccent = accent?.palette != parent.accent.palette || accent?.colorScheme != parent.accent.colorScheme
             self.parent = parent
             selection = parent.selection
+            searchQuery = parent.searchQuery
             accent = parent.accent
             if let layout = collection.collectionViewLayout as? PromptGridLayout,
                layout.minimumWidth != parent.minimumWidth {
@@ -93,13 +97,14 @@ struct NativePromptGrid: NSViewRepresentable {
             if ids != nextIDs {
                 ids = nextIDs
                 collection.reloadData()
-            } else if oldSelection != selection || changedAccent {
+            } else if oldSelection != selection || changedAccent || changedSearch {
+                let changedSelection = oldSelection.symmetricDifference(selection)
                 for item in collection.visibleItems() {
                     guard let item = item as? PromptCardItem,
                           let index = collection.indexPath(for: item)?.item,
                           parent.prompts.indices.contains(index) else { continue }
                     let prompt = parent.prompts[index]
-                    if changedAccent || prompt.id == oldSelection || prompt.id == selection {
+                    if changedAccent || changedSearch || changedSelection.contains(prompt.id) {
                         configure(item, prompt: prompt)
                     }
                 }
@@ -124,7 +129,7 @@ struct NativePromptGrid: NSViewRepresentable {
         }
 
         private func configure(_ item: PromptCardItem, prompt: Prompt) {
-            let presentation = PromptCardPresentation(id: prompt.id, selected: parent.selection == prompt.id,
+            let presentation = PromptCardPresentation(id: prompt.id, selected: parent.selection.contains(prompt.id), query: parent.searchQuery,
                                                       palette: parent.accent.palette, scheme: parent.accent.colorScheme)
             guard item.presentation != presentation else { return }
             item.presentation = presentation
@@ -188,6 +193,7 @@ final class PromptCollectionView: NSCollectionView {
 private struct PromptCardPresentation: Equatable {
     let id: UUID
     let selected: Bool
+    let query: String
     let palette: AppAccentPalette
     let scheme: ColorScheme
 }

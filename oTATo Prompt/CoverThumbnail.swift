@@ -74,6 +74,7 @@ final class CoverThumbnailCache {
                 group.addTask { _ = await self.image(for: request, prefetch: true) }
             }
             while await group.next() != nil {
+                if Task.isCancelled { group.cancelAll(); break }
                 completed += 1
                 progress(completed, requests.count)
                 if next < requests.count {

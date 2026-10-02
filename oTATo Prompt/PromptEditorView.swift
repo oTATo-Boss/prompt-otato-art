@@ -13,6 +13,7 @@ struct PromptEditorView: View {
     let prompt: Prompt
     let folders: [Folder]
     let titlebarInset: CGFloat
+    let embedded: Bool
     let onBack: () -> Void
     let onExport: (String, String) -> Void
     let onError: (String) -> Void
@@ -33,13 +34,14 @@ struct PromptEditorView: View {
     @State private var editorSessionID = UUID()
     @FocusState private var pendingTagFocused: Bool
 
-    init(prompt: Prompt, folders: [Folder], titlebarInset: CGFloat = 20,
+    init(prompt: Prompt, folders: [Folder], titlebarInset: CGFloat = 20, embedded: Bool = false,
          onBack: @escaping () -> Void,
          onExport: @escaping (String, String) -> Void,
          onError: @escaping (String) -> Void) {
         self.prompt = prompt
         self.folders = folders
         self.titlebarInset = titlebarInset
+        self.embedded = embedded
         self.onBack = onBack
         self.onExport = onExport
         self.onError = onError
@@ -48,14 +50,17 @@ struct PromptEditorView: View {
         _folderID = State(initialValue: prompt.folderID)
         _tagInput = State(initialValue: prompt.tagNames.joined(separator: ", "))
         _favorite = State(initialValue: prompt.isFavorite)
-        _coverImage = State(initialValue: PromptPresentation.croppedImage(for: prompt))
+        _coverImage = State(initialValue: embedded ? nil : PromptPresentation.croppedImage(for: prompt))
     }
 
     var body: some View {
         GeometryReader { geometry in
-            let wide = geometry.size.width >= 840
+            let wide = !embedded && geometry.size.width >= 840
             HStack(spacing: 0) {
-                editorPane
+                VStack(spacing: 0) {
+                    if embedded { embeddedActions }
+                    editorPane(compact: geometry.size.width < 540)
+                }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 if wide {
                     Divider()
@@ -63,26 +68,23 @@ struct PromptEditorView: View {
                 }
             }
             .toolbar {
-                ToolbarItem(placement: .navigation) {
-                    Button(action: onBack) { Label("返回", systemImage: "chevron.left") }
-                        .help("返回资料库")
-                }
-                if #available(macOS 26.0, *) {
-                    ToolbarSpacer(.flexible, placement: .primaryAction)
-                }
-                if !wide {
-                    ToolbarItem(placement: .primaryAction) {
-                        Button { showInspector.toggle() } label: {
-                            Label("详情", systemImage: "sidebar.right")
-                        }
-                        .popover(isPresented: $showInspector, arrowEdge: .bottom) {
-                            inspector.frame(width: 290, height: 490)
+                if !embedded {
+                    ToolbarItem(placement: .navigation) {
+                        Button(action: onBack) { Label("返回", systemImage: "chevron.left") }
+                            .help("返回资料库")
+                    }
+                    if #available(macOS 26.0, *) {
+                        ToolbarSpacer(.flexible, placement: .primaryAction)
+                    }
+                    if !wide {
+                        ToolbarItem(placement: .primaryAction) {
+                            inspectorButton
                         }
                     }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    saveButton
-                        .keyboardShortcut("s", modifiers: .command)
+                    ToolbarItem(placement: .confirmationAction) {
+                        saveButton
+                            .keyboardShortcut("s", modifiers: .command)
+                    }
                 }
             }
         }
@@ -107,6 +109,38 @@ struct PromptEditorView: View {
         }
     }
 
+    private var inspectorButton: some View {
+        Button { showInspector.toggle() } label: {
+            Label("详情", systemImage: "sidebar.right")
+        }
+        .help("封面、标签与保存位置")
+        .popover(isPresented: $showInspector, arrowEdge: .bottom) {
+            inspector.frame(width: 290, height: 490)
+        }
+    }
+
+    private var embeddedActions: some View {
+        HStack(spacing: 12) {
+            Text("最后编辑 \(PromptPresentation.date(prompt.updatedAt))")
+                .font(.caption).foregroundStyle(.secondary)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            Button { favorite.toggle() } label: {
+                Image(systemName: favorite ? "star.fill" : "star")
+                    .foregroundStyle(favorite ? accent.actionForeground : Color.primary)
+            }
+            .buttonStyle(.plain)
+            .modifier(EditorHoverSurface())
+            .help(favorite ? "取消收藏" : "收藏")
+            .accessibilityLabel(favorite ? "取消收藏" : "收藏")
+            Button("保存", action: saveCurrent)
+                .appPrimaryAction()
+                .keyboardShortcut("s", modifiers: .command)
+        }
+        .padding(.horizontal, 20)
+        .frame(height: 36)
+    }
+
     @ViewBuilder
     private var saveButton: some View {
         if #available(macOS 26.0, *) {
@@ -117,16 +151,22 @@ struct PromptEditorView: View {
         }
     }
 
-    private var editorPane: some View {
+    private func editorPane(compact: Bool) -> some View {
         VStack(spacing: 0) {
+            if embedded {
+                embeddedMetadata(compact: compact)
+            } else {
             VStack(alignment: .leading, spacing: 7) {
                 TextField("提示词标题", text: $title)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 23, weight: .semibold))
+                    .font(.system(size: embedded ? 20 : 23, weight: .semibold))
+                    .frame(height: embedded ? 30 : 34)
                     .accessibilityLabel("Prompt 标题")
-                Text("最后编辑 \(PromptPresentation.date(prompt.updatedAt))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if !embedded {
+                    Text("最后编辑 \(PromptPresentation.date(prompt.updatedAt))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 if !parsedTags.isEmpty {
                     ScrollView(.horizontal) {
                         HStack(spacing: 6) {
@@ -146,6 +186,7 @@ struct PromptEditorView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 22)
             .padding(.vertical, 15)
+            }
 
             VStack(spacing: 0) {
                 formattingToolbar
@@ -181,10 +222,8 @@ struct PromptEditorView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
-                Button { onExport(title, content) } label: {
-                    Label("导出…", systemImage: "square.and.arrow.up")
-                }
-                .appSecondaryAction()
+                if embedded { exportButton.labelStyle(.iconOnly) }
+                else { exportButton }
                 Button(action: copyCurrent) {
                     Label("复制 Prompt", systemImage: "doc.on.doc")
                 }
@@ -195,8 +234,143 @@ struct PromptEditorView: View {
         }
     }
 
+    private func embeddedMetadata(compact: Bool) -> some View {
+        HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 6) {
+                TextField("提示词标题", text: $title)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 20, weight: .semibold))
+                    .frame(height: 30)
+                    .help(title)
+                    .accessibilityLabel("Prompt 标题")
+                embeddedFolderControl
+                embeddedTagControls
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            embeddedCover(width: compact ? 80 : 112)
+        }
+        .padding(.horizontal, 20).padding(.top, 4).padding(.bottom, 10)
+    }
+
+    private var embeddedFolderControl: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "folder").foregroundStyle(.secondary)
+            FolderPicker(folders: folders, selection: $folderID)
+                .labelsHidden()
+                .frame(width: 160, alignment: .leading)
+                .accessibilityLabel("保存位置")
+        }
+        .font(.system(size: 11))
+        .frame(height: 26)
+    }
+
+    private var embeddedTagControls: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 6) {
+                ForEach(parsedTags, id: \.self) { tag in
+                    HStack(spacing: 5) {
+                        Text("#\(tag)").lineLimit(1)
+                        Button { removeTag(tag) } label: {
+                            Image(systemName: "xmark").font(.system(size: 8, weight: .semibold))
+                                .frame(width: 14, height: 18)
+                        }
+                        .buttonStyle(.plain)
+                        .help("移除标签 \(tag)")
+                        .accessibilityLabel("移除标签 \(tag)")
+                    }
+                    .font(.system(size: 11))
+                    .padding(.leading, 8).padding(.trailing, 4).padding(.vertical, 3)
+                    .background(accent.controlFill, in: Capsule())
+                }
+                addEmbeddedTagButton
+            }
+            .fixedSize(horizontal: true, vertical: false)
+        }
+        .scrollIndicators(.hidden)
+        .frame(height: 26)
+    }
+
+    private var addEmbeddedTagButton: some View {
+        Button {
+            pendingTag = ""
+            addingTag = true
+        } label: {
+            Label("添加标签", systemImage: "plus")
+                .font(.system(size: 11))
+        }
+        .buttonStyle(.plain)
+        .modifier(EditorHoverSurface())
+        .fixedSize()
+        .disabled(parsedTags.count >= 10)
+        .popover(isPresented: $addingTag, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("添加标签").font(.headline)
+                TextField("标签，用逗号分隔", text: $pendingTag)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($pendingTagFocused)
+                    .onSubmit(addTag)
+                    .accessibilityLabel("添加标签，最多 10 个")
+                HStack {
+                    Spacer()
+                    Button("取消") { addingTag = false }
+                    Button("添加", action: addTag).appPrimaryAction()
+                        .disabled(pendingTag.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            .padding(16).frame(width: 280)
+            .onAppear { pendingTagFocused = true }
+        }
+    }
+
+    private func embeddedCover(width: CGFloat) -> some View {
+        VStack(spacing: 4) {
+            Button(action: chooseCover) {
+                Group {
+                    if coverChanged, let coverImage {
+                        Image(nsImage: coverImage).resizable().scaledToFit()
+                    } else if !coverChanged && hasCover {
+                        CoverThumbnail(prompt: prompt, maxPixelSize: 384, prioritizeVisible: true) {
+                            Image(systemName: "photo").foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Image(systemName: "photo.badge.plus").foregroundStyle(.secondary)
+                    }
+                }
+                .frame(width: width, height: width * 9 / 16)
+                .background(accent.controlFill, in: RoundedRectangle(cornerRadius: 5))
+                .clipShape(RoundedRectangle(cornerRadius: 5))
+            }
+            .buttonStyle(.plain)
+            .help(hasCover ? "更换封面" : "添加封面")
+            .accessibilityLabel(hasCover ? "更换封面" : "添加封面")
+            .onDrop(of: [.fileURL, .image], isTargeted: nil, perform: receiveCover)
+            HStack(spacing: 5) {
+                coverAction("上传封面", "photo.badge.plus", chooseCover)
+                coverAction("粘贴封面", "doc.on.clipboard", pasteCover)
+                if hasCover { coverAction("移除封面", "trash", removeCover) }
+            }
+            .frame(height: 20)
+        }
+        .frame(width: width)
+    }
+
+    private func coverAction(_ name: String, _ symbol: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) { Image(systemName: symbol).font(.system(size: 11)) }
+            .buttonStyle(.plain)
+            .modifier(EditorHoverSurface())
+            .help(name).accessibilityLabel(name)
+    }
+
+    private var exportButton: some View {
+        Button { onExport(title, content) } label: {
+            Label("导出…", systemImage: "square.and.arrow.up")
+        }
+        .appSecondaryAction()
+        .help("导出提示词")
+    }
+
     private var formattingToolbar: some View {
-        HStack(spacing: 11) {
+        HStack(spacing: embedded ? 5 : 11) {
             formatButton("标题 1", "textformat.size.larger", .heading1)
             formatButton("标题 2", "textformat.size", .heading2)
             Divider().frame(height: 16)
@@ -227,13 +401,22 @@ struct PromptEditorView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 17) {
                 Text("封面").font(.system(size: 12, weight: .semibold))
-                CoverPreview(image: coverImage)
+                Group {
+                    if embedded && !coverChanged && prompt.coverPath != nil {
+                        CoverThumbnail(prompt: prompt, maxPixelSize: 768, prioritizeVisible: true) {
+                            CoverPreview(image: nil)
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 7))
+                    } else {
+                        CoverPreview(image: coverImage)
+                    }
+                }
                     .aspectRatio(16 / 9, contentMode: .fit)
                     .onDrop(of: [.fileURL, .image], isTargeted: nil, perform: receiveCover)
                 HStack(spacing: 6) {
-                    Button(coverImage == nil ? "添加封面" : "更换封面", action: chooseCover)
+                    Button(hasCover ? "更换封面" : "添加封面", action: chooseCover)
                     Button("粘贴", action: pasteCover)
-                    if coverImage != nil {
+                    if hasCover {
                         Button("移除", role: .destructive) { removeCover() }
                     }
                 }
@@ -294,6 +477,10 @@ struct PromptEditorView: View {
             .padding(18)
         }
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.35))
+    }
+
+    private var hasCover: Bool {
+        coverChanged ? coverImage != nil : prompt.coverPath != nil
     }
 
     private var parsedTags: [String] {

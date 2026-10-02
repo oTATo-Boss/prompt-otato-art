@@ -53,6 +53,7 @@ struct PromptCardView: View {
     @Environment(\.appAccentStyle) private var accent
     let prompt: Prompt
     let selected: Bool
+    var searchQuery = ""
     let onSelect: () -> Void
     let onOpen: () -> Void
     let onCopy: () -> Void
@@ -66,10 +67,11 @@ struct PromptCardView: View {
                 .clipped()
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
-                    Text(prompt.title.isEmpty ? "未命名 Prompt" : prompt.title)
+                    SearchMatchText(text: prompt.title.isEmpty ? "未命名 Prompt" : prompt.title, query: searchQuery)
                         .font(.system(size: 14, weight: .semibold))
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .help(prompt.title)
                     Text(PromptPresentation.date(prompt.updatedAt))
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
@@ -77,7 +79,7 @@ struct PromptCardView: View {
                 }
                 HStack(spacing: 4) {
                     ForEach(Array(tagNames.prefix(3)), id: \.self) { tag in
-                        Text("#\(tag)")
+                        SearchMatchText(text: "#\(tag)", query: searchQuery)
                             .font(.system(size: 11))
                             .lineLimit(1)
                             .padding(.horizontal, 7)
@@ -85,8 +87,7 @@ struct PromptCardView: View {
                             .background(accent.controlFill, in: Capsule())
                     }
                     if tagNames.count > 3 {
-                        Text("+\(tagNames.count - 3)")
-                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                        PromptTagOverflow(names: Array(tagNames.dropFirst(3)))
                     }
                     Spacer(minLength: 0)
                 }
@@ -202,52 +203,63 @@ private struct MediaButtonStyle: ButtonStyle {
     }
 }
 
+/// Compact rows share the preloaded thumbnail cache with the other library views.
 struct PromptListRow: View {
     @Environment(\.appAccentStyle) private var accent
     let prompt: Prompt
-    let folderName: String
     let selected: Bool
+    var searchQuery = ""
     let onSelect: () -> Void
-    let onOpen: () -> Void
-    let onCopy: () -> Void
-    let onFavorite: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            CoverThumbnail(prompt: prompt, maxPixelSize: 192, prioritizeVisible: true) {
-                Image(systemName: "doc.richtext")
-                    .font(.system(size: 20)).foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color(nsColor: .textBackgroundColor))
-            }
-            .frame(width: 80, height: 45)
-            .background(Color(nsColor: .textBackgroundColor))
-            .clipShape(RoundedRectangle(cornerRadius: 5))
-            VStack(alignment: .leading, spacing: 4) {
-                Text(prompt.title.isEmpty ? "未命名 Prompt" : prompt.title)
-                    .font(.system(size: 12, weight: .semibold)).lineLimit(1)
-                Text(PromptPresentation.preview(prompt.content))
-                    .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
-            }
-            Spacer(minLength: 10)
-            Text(folderName).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
-            Text(PromptPresentation.date(prompt.updatedAt))
-                .font(.system(size: 10)).foregroundStyle(.secondary).fixedSize()
-            if prompt.deletedAt == nil {
-                Button(action: onFavorite) {
-                    Image(systemName: prompt.isFavorite ? "star.fill" : "star")
-                        .foregroundStyle(prompt.isFavorite ? accent.actionForeground : Color.primary)
+        Button(action: onSelect) { row }
+            .buttonStyle(.plain)
+            .accessibilityLabel(prompt.title.isEmpty ? "未命名 Prompt" : prompt.title)
+            .accessibilityValue(selected ? "已选择" : "未选择")
+    }
+
+    private var row: some View {
+        HStack(spacing: 10) {
+            if prompt.coverPath != nil {
+                CoverThumbnail(prompt: prompt, maxPixelSize: 192, prioritizeVisible: true) {
+                    Image(systemName: "photo")
+                        .font(.system(size: 14))
+                        .foregroundStyle(.tertiary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .accessibilityLabel(prompt.isFavorite ? "取消收藏" : "收藏")
-                Button(action: onCopy) { Image(systemName: "doc.on.doc") }
-                    .accessibilityLabel("复制 Prompt")
+                .frame(width: 64, height: 36)
+                .background(Color(nsColor: .controlBackgroundColor))
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .accessibilityHidden(true)
             }
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 6) {
+                    SearchMatchText(text: prompt.title.isEmpty ? "未命名 Prompt" : prompt.title, query: searchQuery)
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
+                        .help(prompt.title)
+                    if prompt.isFavorite {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 9))
+                            .foregroundStyle(accent.actionForeground)
+                            .accessibilityLabel("已收藏")
+                    }
+                }
+                HStack(spacing: 6) {
+                    Text(PromptPresentation.date(prompt.updatedAt))
+                        .fixedSize()
+                    Text(PromptPresentation.preview(prompt.content).replacingOccurrences(of: "\n", with: " "))
+                        .lineLimit(1)
+                }
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .buttonStyle(.plain)
-        .padding(.horizontal, 10).frame(height: 65)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .frame(height: 66)
         .modifier(PromptHoverSurface(selected: selected))
         .contentShape(Rectangle())
-        .onTapGesture(count: 2, perform: onOpen)
-        .onTapGesture(perform: onSelect)
     }
 }

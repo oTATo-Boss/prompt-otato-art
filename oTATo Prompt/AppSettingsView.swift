@@ -292,10 +292,11 @@ struct AppSettingsView: View {
                 Picker("高亮配色", selection: $accentPalette) {
                     Text("黑白反色").tag(AppAccentPalette.monochrome.rawValue)
                     Text("备忘录黄").tag(AppAccentPalette.notes.rawValue)
+                    Text("oTATo 蓝").tag(AppAccentPalette.blue.rawValue)
                 }
                 .labelsHidden()
                 .pickerStyle(.segmented)
-                .frame(width: 208)
+                .frame(width: 280)
             }
             Divider().padding(.leading, 35)
             settingsRow("卡片大小", symbol: "rectangle",

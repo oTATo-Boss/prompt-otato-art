@@ -61,6 +61,13 @@ struct NativeTextEditor: NSViewRepresentable {
         editor.textStorage?.delegate = context.coordinator
         configure(editor, in: scroll)
         context.coordinator.refreshAll(in: editor)
+        editor.setSelectedRange(NSRange(location: 0, length: 0))
+        // NSTextView can retain the end position from assigning its initial
+        // string. New documents should open at the beginning after layout.
+        DispatchQueue.main.async {
+            scroll.contentView.scroll(to: .zero)
+            scroll.reflectScrolledClipView(scroll.contentView)
+        }
         return scroll
     }
 
@@ -133,6 +140,7 @@ struct NativeTextEditor: NSViewRepresentable {
         private let fenceMarkers = NSMutableIndexSet()
         private var pendingRefreshRange: NSRange?
         private var refreshScheduled = false
+        private var pendingFenceParity = 0
         private var isNormalizingEdit = false
         private var isApplyingCommand = false
         private var isAdjustingSelection = false
@@ -179,6 +187,17 @@ struct NativeTextEditor: NSViewRepresentable {
                   let editor else { return }
             let oldLength = max(0, editedRange.length - delta)
             let oldRange = NSRange(location: editedRange.location, length: oldLength)
+            pendingFenceParity ^= fenceMarkers.countOfIndexes(in: oldRange) % 2
+            if let pending = pendingRefreshRange {
+                func mapped(_ offset: Int) -> Int {
+                    if offset <= oldRange.location { return offset }
+                    if offset >= NSMaxRange(oldRange) { return offset + delta }
+                    return NSMaxRange(editedRange)
+                }
+                let start = mapped(pending.location)
+                let end = mapped(NSMaxRange(pending))
+                pendingRefreshRange = NSRange(location: start, length: max(0, end - start))
+            }
             for indexes in [hiddenMarkers, bulletMarkers, fenceMarkers] {
                 indexes.remove(in: oldRange)
                 indexes.shiftIndexesStarting(at: NSMaxRange(oldRange), by: delta)
@@ -239,24 +258,38 @@ struct NativeTextEditor: NSViewRepresentable {
                 guard let self else { return }
                 self.refreshScheduled = false
                 guard let editor, let pending = self.pendingRefreshRange else { return }
-                if editor.hasMarkedText() {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self, weak editor] in
-                        guard let self, let editor else { return }
-                        self.scheduleRefresh(editor: editor)
-                    }
-                    return
-                }
-                self.pendingRefreshRange = nil
-                let source = editor.string as NSString
-                let scope = self.affectedLineRange(in: source, around: pending)
-                let oldFenceCount = self.fenceMarkers.countOfIndexes(in: scope)
-                self.restyle(in: scope, editor: editor)
-                if (oldFenceCount - self.fenceMarkers.countOfIndexes(in: scope)) % 2 != 0 {
-                    self.restyle(in: NSRange(location: NSMaxRange(scope),
-                                             length: source.length - NSMaxRange(scope)), editor: editor)
-                }
-                if self.parent.text != editor.string { self.parent.text = editor.string }
+                // Composition commits schedule the pending refresh from textDidChange.
+                // Avoid polling and changing glyphs while the input method owns them.
+                guard !editor.hasMarkedText() else { return }
+                self.processStyleChunk(pending, editor: editor)
+
             }
+        }
+
+        private func processStyleChunk(_ pending: NSRange, editor: NSTextView) {
+            let source = editor.string as NSString
+            let scope = affectedLineRange(in: source, around: pending)
+            guard scope.length > 0 else { pendingRefreshRange = nil; pendingFenceParity = 0; return }
+            // Format whole lines, in bounded run-loop turns for large pastes or
+            // fence changes. Source text and native undo remain untouched.
+            let boundary = min(NSMaxRange(scope), scope.location + 8_192)
+            let lineEnd = NSMaxRange(source.lineRange(for: NSRange(location: boundary, length: 0)))
+            let end = min(NSMaxRange(scope), lineEnd)
+            let chunk = NSRange(location: scope.location, length: end - scope.location)
+            let oldFenceCount = fenceMarkers.countOfIndexes(in: chunk)
+            restyle(in: chunk, editor: editor)
+            pendingFenceParity ^= (oldFenceCount - fenceMarkers.countOfIndexes(in: chunk)) & 1
+            if end < NSMaxRange(scope) {
+                pendingRefreshRange = NSRange(location: end, length: NSMaxRange(scope) - end)
+            } else if pendingFenceParity != 0 && end < source.length {
+                pendingFenceParity = 0
+                pendingRefreshRange = NSRange(location: end, length: source.length - end)
+            } else {
+                pendingFenceParity = 0
+                pendingRefreshRange = nil
+            }
+            if pendingRefreshRange != nil { scheduleRefresh(editor: editor) }
+            if !editor.hasMarkedText(), parent.text != editor.string { parent.text = editor.string }
         }
 
         func textView(_ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange,
@@ -418,10 +451,11 @@ struct NativeTextEditor: NSViewRepresentable {
             bulletMarkers.removeAllIndexes()
             fenceMarkers.removeAllIndexes()
             pendingRefreshRange = nil
+            pendingFenceParity = 0
             lastSelectionLocation = editor.selectedRange().location
             let source = editor.string as NSString
             guard source.length > 0 else { return }
-            restyle(in: NSRange(location: 0, length: source.length), editor: editor)
+            processStyleChunk(NSRange(location: 0, length: source.length), editor: editor)
         }
 
         private func affectedLineRange(in source: NSString, around edit: NSRange) -> NSRange {
@@ -439,8 +473,6 @@ struct NativeTextEditor: NSViewRepresentable {
             bulletMarkers.remove(in: range)
             fenceMarkers.remove(in: range)
             for key in Self.temporaryKeys { layout.removeTemporaryAttribute(key, forCharacterRange: range) }
-            layout.invalidateGlyphs(forCharacterRange: range, changeInLength: 0,
-                                    actualCharacterRange: nil)
         }
 
         private func restyle(in requestedRange: NSRange, editor: NSTextView) {
@@ -527,6 +559,7 @@ struct NativeTextEditor: NSViewRepresentable {
             // inline styling must not hide characters in tables or raw HTML.
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.hasPrefix("<") || trimmed.contains("|") { return }
+            guard line.contains("`") || line.contains("[") || line.contains("*") || line.contains("_") else { return }
             let claimed = NSMutableIndexSet(indexesIn: NSRange(location: 0, length: prefixLength))
             styleInline(MarkdownPattern.code, in: line, sourceStart: sourceStart,
                         claimed: claimed, layout: layout, kind: .code, size: inlineSize)

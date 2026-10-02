@@ -30,6 +30,63 @@ enum PromptLibraryError: LocalizedError {
 /// Shared mutations for the main window, menu bar and global search.
 @MainActor
 enum PromptLibrary {
+    enum BatchAction {
+        case move(UUID?), addTags([String]), favorite(Bool), trash, restore
+    }
+
+    /// Validate the complete batch before mutating, then save once or roll back.
+    static func apply(_ action: BatchAction, to prompts: [Prompt], in context: ModelContext) throws {
+        let targets: [Prompt]
+        if case .restore = action { targets = prompts.filter { $0.deletedAt != nil } }
+        else { targets = prompts.filter { $0.deletedAt == nil } }
+        guard !targets.isEmpty else { return }
+        var tagPlans: [(Prompt, [String])] = []
+        switch action {
+        case .move(let id): try requireActiveFolder(id, in: context)
+        case .addTags(let names):
+            let added = try checkedTagNames(names)
+            tagPlans = try targets.map { ($0, try checkedTagNames($0.tagNames + added)) }
+        default: break
+        }
+        do {
+            let now = Date.now
+            switch action {
+            case .move(let id):
+                for prompt in targets where prompt.folderID != id {
+                    prompt.folderID = id; prompt.updatedAt = now
+                }
+            case .favorite(let favorite):
+                for prompt in targets { prompt.isFavorite = favorite }
+            case .trash:
+                for prompt in targets { prompt.deletedAt = now }
+            case .restore:
+                let folderIDs = Set(try context.fetch(FetchDescriptor<Folder>()).filter { $0.deletedAt == nil }.map(\.id))
+                for prompt in targets {
+                    if let id = prompt.folderID, !folderIDs.contains(id) { prompt.folderID = nil }
+                    prompt.deletedAt = nil; prompt.updatedAt = now
+                }
+            case .addTags:
+                var byName = Dictionary(try context.fetch(FetchDescriptor<Tag>()).map { ($0.normalizedName, $0) },
+                                        uniquingKeysWith: { first, _ in first })
+                for (prompt, names) in tagPlans {
+                    guard Set(prompt.tags.map(\.normalizedName)) != Set(names.map(Tag.normalize)) else { continue }
+                    prompt.tags = names.map { name in
+                        let key = Tag.normalize(name)
+                        if let tag = byName[key] { return tag }
+                        let tag = Tag(name: name, normalizedName: key)
+                        context.insert(tag); byName[key] = tag
+                        return tag
+                    }
+                    prompt.updatedAt = now
+                }
+            }
+            try context.save()
+        } catch {
+            context.rollback()
+            throw error
+        }
+    }
+
     static func createPrompt(
         in context: ModelContext,
         title: String,

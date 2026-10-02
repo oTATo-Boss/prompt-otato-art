@@ -112,6 +112,33 @@ private final class SearchFocusBoundaryView: NSView {
     }
 }
 
+/// Native collection hosts have a separate responder chain. Keep library keys
+/// working after leaving the toolbar search field without intercepting text entry.
+private struct LibraryKeyBoundary: NSViewRepresentable {
+    let onKey: (NSEvent) -> Bool
+    func makeNSView(context: Context) -> KeyView { KeyView() }
+    func updateNSView(_ view: KeyView, context: Context) { view.onKey = onKey }
+
+    final class KeyView: NSView {
+        var onKey: (NSEvent) -> Bool = { _ in false }
+        private var monitor: Any?
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+            guard window != nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self, event.window === self.window, self.window?.attachedSheet == nil,
+                      !(self.window?.firstResponder is NSTextView),
+                      !(self.window?.firstResponder is NSControl), self.onKey(event) else { return event }
+                return nil
+            }
+        }
+        deinit { if let monitor { NSEvent.removeMonitor(monitor) } }
+    }
+}
+
 private struct SubtleHoverSurface: ViewModifier {
     @Environment(\.appAccentStyle) private var accent
     @State private var isHovering = false
@@ -192,11 +219,25 @@ struct ContentView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var libraryFilter = PromptLibraryFilter()
     @State private var showingFilterPanel = false
-    @State private var selectedPromptID: UUID?
+    @State private var selection = PromptSelection()
+    @State private var showingBatchTags = false
+    @State private var batchTagInput = ""
+
+    private var selectedPromptID: UUID? {
+        get { selection.focusedID }
+        nonmutating set { selection.single(newValue) }
+    }
+
+    private var selectedPrompts: [Prompt] { shownPrompts.filter { selection.ids.contains($0.id) } }
+    private var listPrompt: Prompt? {
+        guard selection.ids.count == 1 else { return nil }
+        return shownPrompts.first { $0.id == selectedPromptID && $0.deletedAt == nil }
+    }
     @State private var editingID: UUID?
     @State private var creating = false
     @State private var searchText = ""
     @State private var settledSearch = ""
+    @State private var searchMatches: [Prompt] = []
     @State private var searchScope: PromptSearch.Scope = .all
     @State private var searchTask: Task<Void, Never>?
     @State private var importing = false
@@ -238,8 +279,7 @@ struct ContentView: View {
     private var basePrompts: [Prompt] {
         let base: [Prompt]
         if searching {
-            base = settledSearch.isEmpty ? [] : PromptSearch.search(
-                activePrompts, query: settledSearch, scope: searchScope, folders: activeFolders)
+            base = settledSearch.isEmpty ? [] : searchMatches
         } else {
             switch collection {
             case .all, .recentEdit: base = activePrompts
@@ -305,7 +345,7 @@ struct ContentView: View {
         .frame(minWidth: 900, minHeight: 620)
     }
 
-    var body: some View {
+    private var workspaceWithDialogs: some View {
         workspaceView
         .fileImporter(isPresented: $importing,
                       allowedContentTypes: [.plainText, UTType(filenameExtension: "md") ?? .plainText],
@@ -346,26 +386,21 @@ struct ContentView: View {
         )) {
             Button("好", role: .cancel) { errorMessage = nil }
         } message: { Text(errorMessage ?? "未知错误") }
-        .onChange(of: searchText) { _, value in
-            searchTask?.cancel()
-            if value.isEmpty { settledSearch = ""; return }
-            searchTask = Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(120))
-                if !Task.isCancelled { settledSearch = value }
-            }
+    }
+
+    private var workspaceWithRequests: some View {
+        workspaceWithDialogs
+        .onChange(of: searchText) { _, _ in scheduleSearch() }
+        .onChange(of: searchScope) { _, _ in scheduleSearch() }
+        .onChange(of: PromptSearch.revision(prompts, folders: activeFolders)) { _, _ in
+            if searching { scheduleSearch() }
         }
         .onChange(of: Set(tags.map(\.id))) { _, ids in
             libraryFilter.removeUnknownTags(validIDs: ids)
         }
-        .onChange(of: libraryFilter) { _, _ in
-            if let id = selectedPromptID, !shownPrompts.contains(where: { $0.id == id }) {
-                selectedPromptID = nil
-            }
-        }
         .onChange(of: app.openPromptID) { _, id in
-            guard let id, prompts.contains(where: { $0.id == id }) else { return }
-            creating = false
-            editingID = id
+            guard let id, let prompt = prompts.first(where: { $0.id == id }) else { return }
+            open(prompt)
             app.openPromptID = nil
         }
         .onChange(of: app.createRequest) { _, count in
@@ -389,8 +424,23 @@ struct ContentView: View {
             app.collectionRequest = nil
             navigate(target == .recentUse ? .recentUse : .favorites)
         }
-        .onChange(of: selectedPromptID) { _, id in app.selectedPromptID = id }
+    }
+
+    var body: some View {
+        workspaceWithRequests
+        .onChange(of: selection) { _, value in
+            app.selectedPromptIDs = value.ids
+            app.selectedPromptID = value.ids.count == 1 ? value.focusedID : nil
+        }
+        .onChange(of: shownPrompts.map(\.id)) { _, ids in
+            if !creating && editingID == nil {
+                selection.retain(ids)
+                selectFirstListPromptIfNeeded()
+            }
+        }
+        .onChange(of: viewMode) { _, _ in selectFirstListPromptIfNeeded() }
         .onAppear(perform: handleInitialRequests)
+        .onDisappear { searchTask?.cancel() }
         .onChange(of: prompts.count) { _, _ in
             if app.startup.isReady {
                 Task { await PromptSearch.prepareIndex(activePrompts, folders: activeFolders) }
@@ -410,14 +460,29 @@ struct ContentView: View {
         }
     }
 
+    private func scheduleSearch() {
+        searchTask?.cancel()
+        settledSearch = ""; searchMatches = []
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return }
+        let scope = searchScope
+        searchTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(120))
+            guard !Task.isCancelled else { return }
+            let matches = await PromptSearch.searchAsync(prompts, query: query, scope: scope, folders: activeFolders)
+            guard !Task.isCancelled else { return }
+            searchMatches = matches; settledSearch = query
+        }
+    }
+
     private var detailHeaderInset: CGFloat {
         columnVisibility == .detailOnly ? 136 : 20
     }
 
     private func handleInitialRequests() {
-        if let id = app.openPromptID, prompts.contains(where: { $0.id == id }) {
-            creating = false
-            editingID = id
+        if searching { scheduleSearch() }
+        if let id = app.openPromptID, let prompt = prompts.first(where: { $0.id == id }) {
+            open(prompt)
             app.openPromptID = nil
         } else if app.createRequest > 0 {
             app.createRequest = 0
@@ -512,24 +577,99 @@ struct ContentView: View {
         .accessibilityLabel("\(title)，\(count) 个提示词")
     }
 
-    private var library: some View {
+    private func libraryCard(_ prompt: Prompt) -> some View {
+        PromptCardView(prompt: prompt, selected: selection.ids.contains(prompt.id), searchQuery: settledSearch,
+                       onSelect: { select(prompt) }, onOpen: { open(prompt) },
+                       onCopy: { app.requestCopy(prompt) }, onFavorite: { toggleFavorite(prompt) })
+            .contextMenu { cardMenu(prompt) }
+            .onDrag { NSItemProvider(object: "prompt:\(prompt.id.uuidString)" as NSString) }
+    }
+
+    private func libraryRow(_ prompt: Prompt) -> some View {
+        PromptListRow(prompt: prompt, selected: selection.ids.contains(prompt.id),
+                      searchQuery: settledSearch, onSelect: { select(prompt) })
+            .contextMenu { cardMenu(prompt) }
+            .onDrag { NSItemProvider(object: "prompt:\(prompt.id.uuidString)" as NSString) }
+    }
+
+    /// Date groups apply only to the chronological sort. A–Z remains one list.
+    private var listSections: [(name: String, prompts: [Prompt])] {
+        let values = shownPrompts
+        guard sort == .updated else { return [("", values)] }
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: .now)
+        let week = calendar.date(byAdding: .day, value: -7, to: today) ?? today
+        let month = calendar.date(byAdding: .day, value: -30, to: today) ?? today
+        let groups = Dictionary(grouping: values) { prompt -> String in
+            if calendar.isDateInToday(prompt.updatedAt) { return "今天" }
+            if calendar.isDateInYesterday(prompt.updatedAt) { return "昨天" }
+            if prompt.updatedAt >= week { return "过去 7 天" }
+            if prompt.updatedAt >= month { return "过去 30 天" }
+            return "更早"
+        }
+        return ["今天", "昨天", "过去 7 天", "过去 30 天", "更早"].compactMap { name in
+            groups[name].map { (name, $0) }
+        }
+    }
+
+    private var compactPromptList: some View {
         VStack(spacing: 0) {
-            if shownPrompts.isEmpty && (collection != .trash || searching || libraryFilter.isActive || trashedFolderRoots.isEmpty) { emptyState }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(searching ? "搜索结果" : selectedFolder?.name ?? collection.name)
+                        .font(.system(size: 14, weight: .semibold)).lineLimit(1)
+                    Text("\(shownPrompts.count) 个提示词")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 20).padding(.vertical, 12)
+                Divider()
+                libraryContents.appScrollEdge()
+        }
+            .focusable().focused($libraryFocused).focusEffectDisabled()
+            .background { LibraryKeyBoundary(onKey: handleLibraryKey) }
+    }
+
+    private var listWorkspace: some View {
+        HSplitView {
+            compactPromptList
+                .frame(minWidth: 300, idealWidth: 360, maxWidth: 440, maxHeight: .infinity)
+            Group {
+                if let prompt = listPrompt {
+                    PromptEditorView(prompt: prompt, folders: activeFolders, embedded: true,
+                                     onBack: {},
+                                     onExport: { export(prompt, title: $0, content: $1) },
+                                     onError: { errorMessage = $0 })
+                        .id(prompt.id)
+                } else {
+                    VStack(spacing: 10) {
+                        Image(systemName: selection.ids.count > 1 ? "checkmark.circle" : "doc.text")
+                            .font(.system(size: 30, weight: .ultraLight)).foregroundStyle(.tertiary)
+                        Text(selection.ids.count > 1 ? "已选 \(selection.ids.count) 条提示词" : "选择一条提示词")
+                            .font(.headline).foregroundStyle(.secondary)
+                        if selection.ids.count > 1 {
+                            Text("使用底部操作栏批量管理")
+                                .font(.callout).foregroundStyle(.secondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private var libraryContents: some View {
+        VStack(spacing: 0) {
+            if searching && settledSearch.isEmpty {
+                ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if shownPrompts.isEmpty && (collection != .trash || searching || libraryFilter.isActive || trashedFolderRoots.isEmpty) { emptyState }
             else {
                 Group {
                     if viewMode == "grid" && (collection != .trash || searching || libraryFilter.isActive || trashedFolderRoots.isEmpty) {
                         GeometryReader { geometry in
                             NativePromptGrid(prompts: shownPrompts, minimumWidth: cardMinimumWidth,
-                                             topInset: geometry.frame(in: .global).minY, selection: selectedPromptID) { prompt in
-                                AnyView(
-                                    PromptCardView(prompt: prompt, selected: selectedPromptID == prompt.id,
-                                                   onSelect: { selectedPromptID = prompt.id },
-                                                   onOpen: { open(prompt) },
-                                                   onCopy: { app.requestCopy(prompt) },
-                                                   onFavorite: { toggleFavorite(prompt) })
-                                        .contextMenu { cardMenu(prompt) }
-                                        .onDrag { NSItemProvider(object: "prompt:\(prompt.id.uuidString)" as NSString) }
-                                )
+                                             topInset: geometry.frame(in: .global).minY, selection: selection.ids, searchQuery: settledSearch) { prompt in
+                                AnyView(libraryCard(prompt))
                             }
                             .overlay(alignment: .top) {
                                 // SwiftUI scroll-edge effects do not discover an AppKit
@@ -552,30 +692,26 @@ struct ContentView: View {
                                 trashedFolderSection
                             }
                             if viewMode == "list" {
-                                LazyVStack(spacing: 1) {
-                                    ForEach(shownPrompts) { prompt in
-                                        PromptListRow(prompt: prompt, folderName: folderName(prompt.folderID),
-                                                      selected: selectedPromptID == prompt.id,
-                                                      onSelect: { selectedPromptID = prompt.id },
-                                                      onOpen: { open(prompt) },
-                                                      onCopy: { app.requestCopy(prompt) },
-                                                      onFavorite: { toggleFavorite(prompt) })
-                                            .contextMenu { cardMenu(prompt) }
-                                            .onDrag { NSItemProvider(object: "prompt:\(prompt.id.uuidString)" as NSString) }
+                                LazyVStack(alignment: .leading, spacing: 0) {
+                                    ForEach(listSections, id: \.name) { section in
+                                        if !section.name.isEmpty {
+                                            Text(section.name)
+                                                .font(.system(size: 13, weight: .semibold))
+                                                .padding(.horizontal, 16)
+                                                .padding(.top, 15).padding(.bottom, 8)
+                                        }
+                                        ForEach(section.prompts) { prompt in
+                                            libraryRow(prompt)
+                                            Divider().padding(.leading, 16).padding(.trailing, 10)
+                                        }
                                     }
                                 }
-                                .padding(.horizontal, 20).padding(.vertical, 12)
+                                .padding(.horizontal, 10).padding(.bottom, 12)
                             } else {
                                 LazyVGrid(columns: [GridItem(.adaptive(minimum: cardMinimumWidth,
                                                                       maximum: cardMinimumWidth + 45), spacing: 16)], spacing: 16) {
                                     ForEach(shownPrompts) { prompt in
-                                        PromptCardView(prompt: prompt, selected: selectedPromptID == prompt.id,
-                                                       onSelect: { selectedPromptID = prompt.id },
-                                                       onOpen: { open(prompt) },
-                                                       onCopy: { app.requestCopy(prompt) },
-                                                       onFavorite: { toggleFavorite(prompt) })
-                                            .contextMenu { cardMenu(prompt) }
-                                            .onDrag { NSItemProvider(object: "prompt:\(prompt.id.uuidString)" as NSString) }
+                                        libraryCard(prompt)
                                     }
                                 }
                                 .padding(.horizontal, 20).padding(.top, 15).padding(.bottom, 20)
@@ -583,29 +719,56 @@ struct ContentView: View {
                         }
                     }
                 }
-                .appScrollEdge()
-                .focusable().focused($libraryFocused)
-                .focusEffectDisabled()
-                .onKeyPress(.return) { openSelected(); return .handled }
-                .onKeyPress(.space) { copySelected(); return .handled }
-                .onKeyPress(.leftArrow) { moveSelection(-1); return .handled }
-                .onKeyPress(.rightArrow) { moveSelection(1); return .handled }
-                .onKeyPress(.upArrow) { moveSelection(viewMode == "grid" ? -gridColumnCount : -1); return .handled }
-                .onKeyPress(.downArrow) { moveSelection(viewMode == "grid" ? gridColumnCount : 1); return .handled }
+
             }
         }
-        .appTopBar {
-            VStack(spacing: 0) {
-                if searching { searchScopes }
-                tagStrip
-                if libraryFilter.isActive {
-                    PromptActiveFilterSummary(filter: $libraryFilter, tags: availableTagOptions)
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 8)
+    }
+
+    private var keyboardLibrary: some View {
+        libraryContents
+            .appScrollEdge()
+            .focusable().focused($libraryFocused)
+            .focusEffectDisabled()
+            .background { LibraryKeyBoundary(onKey: handleLibraryKey) }
+    }
+
+    private func handleLibraryKey(_ event: NSEvent) -> Bool {
+        guard !searchFocused, !creating, editingID == nil, !showingFilterPanel, !showingBatchTags else { return false }
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if modifiers.contains(.command) {
+            guard event.charactersIgnoringModifiers == "a" else { return false }
+            selection.all(shownPrompts.map(\.id)); return true
+        }
+        guard !modifiers.contains(.option), !modifiers.contains(.control) else { return false }
+        switch event.keyCode {
+        case 123: moveSelection(-1, extend: modifiers.contains(.shift))
+        case 124: moveSelection(1, extend: modifiers.contains(.shift))
+        case 126: moveSelection(viewMode == "grid" ? -gridColumnCount : -1, extend: modifiers.contains(.shift))
+        case 125: moveSelection(viewMode == "grid" ? gridColumnCount : 1, extend: modifiers.contains(.shift))
+        case 36, 76: openSelected()
+        case 49: copySelected()
+        case 53: selection.single(nil)
+        default: return false
+        }
+        return true
+    }
+
+    private var library: some View {
+        Group {
+            if viewMode == "list" {
+                VStack(spacing: 0) {
+                    libraryFilterBar
+                    Divider()
+                    listWorkspace
                 }
+            } else {
+                keyboardLibrary.appTopBar { libraryFilterBar }
             }
         }
         .toolbar { libraryToolbar }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if selection.ids.count > 1 { batchActionBar }
+        }
         .background(Color(nsColor: .windowBackgroundColor))
         .onDrop(of: [.fileURL], isTargeted: $fileDropTargeted, perform: receiveFiles)
         .background {
@@ -616,6 +779,8 @@ struct ContentView: View {
             }
         }
         .onAppear {
+            selection.retain(shownPrompts.map(\.id))
+            selectFirstListPromptIfNeeded()
             // Keep the library keyboard-ready without giving the search field
             // its prominent AppKit focus ring on every window opening.
             DispatchQueue.main.async {
@@ -652,6 +817,17 @@ struct ContentView: View {
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
                 .shadow(color: .black.opacity(0.08), radius: 12, y: 4)
                 .allowsHitTesting(false)
+            }
+        }
+    }
+
+    private var libraryFilterBar: some View {
+        VStack(spacing: 0) {
+            if searching { searchScopes }
+            tagStrip
+            if libraryFilter.isActive {
+                PromptActiveFilterSummary(filter: $libraryFilter, tags: availableTagOptions)
+                    .padding(.horizontal, 20).padding(.bottom, 8)
             }
         }
     }
@@ -764,7 +940,7 @@ struct ContentView: View {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
-            TextField("搜索提示词、标签、内容…", text: $searchText)
+            TextField("搜索标题、标签…", text: $searchText)
                 .textFieldStyle(.plain)
                 .focused($searchFocused)
                 .focusEffectDisabled()
@@ -843,7 +1019,6 @@ struct ContentView: View {
                 scopeChip("全部", .all)
                 scopeChip("标题", .title)
                 scopeChip("标签", .tags)
-                scopeChip("内容", .content)
                 scopeChip("收藏", .favorites)
             }
             .padding(.horizontal, 20).padding(.vertical, 8)
@@ -898,8 +1073,90 @@ struct ContentView: View {
         }
     }
 
+    private var batchActionBar: some View {
+        HStack(spacing: 14) {
+            Text("已选 \(selection.ids.count) 条").font(.callout.weight(.medium))
+            if selectedPrompts.allSatisfy({ $0.deletedAt != nil }) {
+                Button("恢复") { applyBatch(.restore) }
+            } else {
+                Menu { batchMoveMenu } label: { Label("移动到", systemImage: "folder") }
+                Button { batchTagInput = ""; showingBatchTags = true } label: { Label("添加标签", systemImage: "tag") }
+                    .popover(isPresented: $showingBatchTags) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("为所选提示词添加标签").font(.headline)
+                            TextField("标签，用逗号分隔", text: $batchTagInput)
+                                .onSubmit { addBatchTags() }
+                                .frame(width: 260)
+                            HStack {
+                                Spacer()
+                                Button("取消") { showingBatchTags = false }
+                                Button("添加", action: addBatchTags).appPrimaryAction()
+                                    .disabled(batchTagInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            }
+                        }.padding(18)
+                    }
+                Menu {
+                    Button("收藏") { applyBatch(.favorite(true)) }
+                    Button("取消收藏") { applyBatch(.favorite(false)) }
+                } label: { Label("收藏", systemImage: "star") }
+                Button(role: .destructive) { applyBatch(.trash) } label: { Label("移到废纸篓", systemImage: "trash") }
+            }
+            Spacer(minLength: 0)
+            Button { selection.single(nil) } label: { Image(systemName: "xmark") }
+                .help("取消选择").accessibilityLabel("取消多选")
+        }
+        .buttonStyle(.borderless)
+        .padding(.horizontal, 20).padding(.vertical, 12)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .overlay(alignment: .top) { Divider() }
+    }
+
+    @ViewBuilder private var batchMoveMenu: some View {
+        Button("未分类") { applyBatch(.move(nil)) }
+        ForEach(activeFolders) { folder in
+            Button(folderPath(folder)) { applyBatch(.move(folder.id)) }
+        }
+    }
+
+    @ViewBuilder private var batchMenu: some View {
+        Text("已选 \(selection.ids.count) 条提示词")
+        if selectedPrompts.allSatisfy({ $0.deletedAt != nil }) {
+            Button("恢复所选") { applyBatch(.restore) }
+        } else {
+            Menu("移动到") { batchMoveMenu }
+            Menu("添加标签") {
+                ForEach(tags) { tag in Button(tag.name) { applyBatch(.addTags([tag.name])) } }
+            }
+            Button("收藏所选") { applyBatch(.favorite(true)) }
+            Button("取消收藏所选") { applyBatch(.favorite(false)) }
+            Button("移到废纸篓", role: .destructive) { applyBatch(.trash) }
+        }
+    }
+
+    private func addBatchTags() {
+        let names = batchTagInput.components(separatedBy: CharacterSet(charactersIn: ",，"))
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        guard !names.isEmpty else { return }
+        if applyBatch(.addTags(names)) { showingBatchTags = false }
+    }
+
+    @discardableResult private func applyBatch(_ action: PromptLibrary.BatchAction) -> Bool {
+        let targets = selectedPrompts
+        do {
+            try PromptLibrary.apply(action, to: targets, in: context)
+            if case .trash = action { selection.single(nil) }
+            showToast("已处理 \(targets.count) 条提示词")
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
     @ViewBuilder private func cardMenu(_ prompt: Prompt) -> some View {
-        if prompt.deletedAt != nil {
+        if selection.ids.count > 1 && selection.ids.contains(prompt.id) {
+            batchMenu
+        } else if prompt.deletedAt != nil {
             Button("恢复") { perform { try PromptLibrary.restore(prompt, in: context) } }
             Button("永久删除", role: .destructive) { perform { try PromptLibrary.purge(prompt, in: context) } }
         } else {
@@ -935,7 +1192,18 @@ struct ContentView: View {
     }
     private func open(_ prompt: Prompt) {
         guard prompt.deletedAt == nil else { return }
-        selectedPromptID = prompt.id; creating = false; editingID = prompt.id
+        if viewMode == "list" {
+            if !shownPrompts.contains(where: { $0.id == prompt.id }) {
+                navigate(prompt.folderID.map(LibraryCollection.folder) ?? .all)
+            }
+            selectedPromptID = prompt.id; creating = false; editingID = nil
+        } else {
+            selectedPromptID = prompt.id; creating = false; editingID = prompt.id
+        }
+    }
+    private func selectFirstListPromptIfNeeded() {
+        guard viewMode == "list", !creating, editingID == nil, selection.ids.isEmpty else { return }
+        selection.single(shownPrompts.first?.id)
     }
     private func startCreate() {
         editingID = nil; selectedPromptID = nil; creating = true
@@ -1157,16 +1425,27 @@ struct ContentView: View {
         }
         return true
     }
-    private func moveSelection(_ step: Int) {
+    private func select(_ prompt: Prompt) {
+        searchFocused = false
+        let modifiers = NSEvent.modifierFlags
+        selection.select(prompt.id, orderedIDs: shownPrompts.map(\.id),
+                         toggle: modifiers.contains(.command), extend: modifiers.contains(.shift))
+        libraryFocused = true
+    }
+
+    private func moveSelection(_ step: Int, extend: Bool = false) {
         guard !shownPrompts.isEmpty else { return }
         let current = shownPrompts.firstIndex { $0.id == selectedPromptID } ?? -1
-        selectedPromptID = shownPrompts[min(max(current + step, 0), shownPrompts.count - 1)].id
+        selection.select(shownPrompts[min(max(current + step, 0), shownPrompts.count - 1)].id,
+                         orderedIDs: shownPrompts.map(\.id), toggle: false, extend: extend)
     }
     private func openSelected() {
+        guard selection.ids.count == 1 else { return }
         guard let prompt = shownPrompts.first(where: { $0.id == selectedPromptID }) else { return }
         open(prompt)
     }
     private func copySelected() {
+        guard selection.ids.count == 1 else { return }
         guard let prompt = shownPrompts.first(where: { $0.id == selectedPromptID && $0.deletedAt == nil }) else { return }
         app.requestCopy(prompt)
     }

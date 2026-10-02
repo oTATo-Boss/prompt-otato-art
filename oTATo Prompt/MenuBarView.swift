@@ -11,6 +11,7 @@ struct MenuBarView: View {
 
     @State private var searchText = ""
     @State private var settledSearch = ""
+    @State private var searchResults: [Prompt] = []
     @State private var searchTask: Task<Void, Never>?
     @State private var copied = false
     @State private var hoveredPromptID: UUID?
@@ -34,12 +35,6 @@ struct MenuBarView: View {
             .prefix(4).map { $0 }
     }
 
-    private var searchResults: [Prompt] {
-        PromptSearch.search(
-            activePrompts, query: settledSearch, folders: folders, limit: 8
-        )
-    }
-
     private var listHeight: CGFloat {
         if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let count = recentPrompts.count + favoritePrompts.count
@@ -58,7 +53,7 @@ struct MenuBarView: View {
             HStack(spacing: 9) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
-                TextField("搜索 Prompt…", text: $searchText)
+                TextField("搜索标题、标签…", text: $searchText)
                     .textFieldStyle(.plain)
                     .focused($searchFocused)
                     .accessibilityLabel("搜索提示词")
@@ -98,19 +93,11 @@ struct MenuBarView: View {
             footer
         }
         .frame(width: 430)
-        .onAppear { searchFocused = true }
+        .onAppear { searchFocused = true; if !searchText.isEmpty { scheduleSearch() } }
         .onDisappear { searchTask?.cancel() }
-        .onChange(of: searchText) { _, value in
-            searchTask?.cancel()
-            if value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                settledSearch = ""
-            } else {
-                settledSearch = ""
-                searchTask = Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(120))
-                    if !Task.isCancelled { settledSearch = value }
-                }
-            }
+        .onChange(of: searchText) { _, _ in scheduleSearch() }
+        .onChange(of: PromptSearch.revision(prompts, folders: folders)) { _, _ in
+            if !searchText.isEmpty { scheduleSearch() }
         }
         .onChange(of: app.menuCopyCompleted) { _, _ in
             copied = true
@@ -119,6 +106,20 @@ struct MenuBarView: View {
                 dismiss()
                 copied = false
             }
+        }
+    }
+
+    private func scheduleSearch() {
+        searchTask?.cancel()
+        settledSearch = ""; searchResults = []
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return }
+        searchTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(120))
+            guard !Task.isCancelled else { return }
+            let matches = await PromptSearch.searchAsync(activePrompts, query: query, folders: folders, limit: 8)
+            guard !Task.isCancelled else { return }
+            searchResults = matches; settledSearch = query
         }
     }
 
@@ -197,11 +198,12 @@ struct MenuBarView: View {
                 .clipped()
                 .clipShape(RoundedRectangle(cornerRadius: 6))
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(prompt.title)
-                        .font(.system(size: 12, weight: .semibold))
+                    SearchMatchText(text: prompt.title, query: settledSearch)
+                        .font(.system(size: 12, weight: .semibold)).help(prompt.title)
                         .lineLimit(1)
                     if !prompt.tagNames.isEmpty {
-                        Text(prompt.tagNames.prefix(3).map { "#\($0)" }.joined(separator: "   "))
+                        SearchMatchText(text: prompt.tagNames.prefix(3).map { "#\($0)" }.joined(separator: "   "),
+                                        query: settledSearch)
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)

@@ -4,6 +4,7 @@ import SwiftUI
 enum AppAccentPalette: String, CaseIterable {
     case monochrome
     case notes
+    case blue
 }
 
 struct AppAccentStyle {
@@ -18,6 +19,7 @@ struct AppAccentStyle {
         switch palette {
         case .monochrome: Color(nsColor: .labelColor)
         case .notes: Color(nsColor: .systemYellow)
+        case .blue: color(0x2B5FFC)
         }
     }
 
@@ -25,6 +27,7 @@ struct AppAccentStyle {
         switch palette {
         case .monochrome: Color(nsColor: .textBackgroundColor)
         case .notes: color(0x202020)
+        case .blue: .white
         }
     }
 
@@ -35,10 +38,13 @@ struct AppAccentStyle {
     var controlFill: Color { softSelection.opacity(0.40) }
     var hoverFill: Color { softSelection.opacity(0.65) }
 
-    /// Small accent symbols need more contrast than a large yellow fill.
+    /// Small accent symbols need more contrast than a large colored fill.
     var actionForeground: Color {
-        palette == .notes ? (isDark ? Color(nsColor: .systemYellow) : color(0x8A6500))
-            : Color(nsColor: .labelColor)
+        switch palette {
+        case .monochrome: Color(nsColor: .labelColor)
+        case .notes: isDark ? Color(nsColor: .systemYellow) : color(0x8A6500)
+        case .blue: isDark ? color(0x8FACFF) : color(0x2B5FFC)
+        }
     }
 
     var focusOutline: Color { actionForeground.opacity(0.55) }
@@ -108,13 +114,16 @@ extension View {
 private struct AppPrimaryActionModifier: ViewModifier {
     @Environment(\.appAccentStyle) private var accent
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.appearsActive) private var appearsActive
 
     func body(content: Content) -> some View {
         content
             .buttonStyle(.borderedProminent)
             .tint(accent.selectedFill)
-            .foregroundStyle(isEnabled ? accent.selectedForeground
-                             : Color(nsColor: .disabledControlTextColor))
+            // Native prominent buttons lose their tint in inactive windows.
+            // Their labels must follow the neutral background in that state.
+            .foregroundStyle(!isEnabled ? Color(nsColor: .disabledControlTextColor)
+                             : appearsActive ? accent.selectedForeground : Color.primary)
     }
 }
 

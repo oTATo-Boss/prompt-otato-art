@@ -28,6 +28,7 @@ final class AppCoordinator: NSObject, ObservableObject {
 
     @Published var openPromptID: UUID?
     @Published var selectedPromptID: UUID?
+    var selectedPromptIDs: Set<UUID> = []
     @Published var createRequest = 0
     @Published var searchRequest = 0
     @Published var collectionRequest: LibraryShortcut?
@@ -160,18 +161,36 @@ final class AppCoordinator: NSObject, ObservableObject {
 
     func requestCopySelected() {
         if let editorCopy { editorCopy(); return }
+        guard selectedPromptIDs.count <= 1 else { showToast("请选择单条提示词复制"); return }
         guard let prompt = selectedPrompt() else { return }
         requestCopy(prompt)
     }
 
     func toggleFavoriteSelected() {
         if let editorToggleFavorite { editorToggleFavorite(); return }
+        if selectedPromptIDs.count > 1 {
+            let targets = selectedPrompts()
+            do { try PromptLibrary.apply(.favorite(!targets.allSatisfy(\.isFavorite)), to: targets, in: container.mainContext) }
+            catch { showToast(error.localizedDescription) }
+            return
+        }
         guard let prompt = selectedPrompt() else { return }
         do { try PromptLibrary.setFavorite(!prompt.isFavorite, for: prompt, in: container.mainContext) }
         catch { showToast(error.localizedDescription) }
     }
 
     func trashSelected() {
+        if editorOwner == nil && selectedPromptIDs.count > 1 {
+            do {
+                let targets = selectedPrompts()
+                try PromptLibrary.apply(.trash, to: targets, in: container.mainContext)
+                lastTrashedPromptID = targets.first?.id
+                selectedPromptIDs.removeAll()
+                selectedPromptID = nil
+                trashRevision += 1
+            } catch { showToast(error.localizedDescription) }
+            return
+        }
         guard let prompt = selectedPrompt() else { return }
         do {
             try PromptLibrary.trash(prompt, in: container.mainContext)
@@ -186,9 +205,11 @@ final class AppCoordinator: NSObject, ObservableObject {
 
     /// Replacing the store discards the current unsaved editing session.
     func prepareForLibraryRestore() -> Bool {
+        startup.cancelBackgroundPreparation()
         globalSearchController?.dismiss(restoreFocus: false)
         libraryRevision += 1
         selectedPromptID = nil
+        selectedPromptIDs.removeAll()
         openPromptID = nil
         editorCopy = nil
         editorToggleFavorite = nil
@@ -200,6 +221,11 @@ final class AppCoordinator: NSObject, ObservableObject {
         guard let id = selectedPromptID,
               let prompts = try? container.mainContext.fetch(FetchDescriptor<Prompt>()) else { return nil }
         return prompts.first { $0.id == id && $0.deletedAt == nil }
+    }
+
+    private func selectedPrompts() -> [Prompt] {
+        let prompts = (try? container.mainContext.fetch(FetchDescriptor<Prompt>())) ?? []
+        return prompts.filter { selectedPromptIDs.contains($0.id) && $0.deletedAt == nil }
     }
 
     private func finishCopy(_ prompt: Prompt, source: CopySource, content: String?) throws {

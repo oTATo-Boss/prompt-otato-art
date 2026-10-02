@@ -231,7 +231,7 @@ private final class GlobalSearchState: ObservableObject {
 
     func requestFocus() { focusRequest += 1 }
 
-    func refreshResults() { searchNow() }
+    func refreshResults() { scheduleSearch() }
 
     func moveSelection(by offset: Int) {
         guard !results.isEmpty else { return }
@@ -255,10 +255,14 @@ private final class GlobalSearchState: ObservableObject {
             searchNow()
             return
         }
+        results = []; selectedIndex = 0
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         searchTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 120_000_000)
+            guard !Task.isCancelled, let self else { return }
+            let matches = await PromptSearch.searchAsync(self.prompts, query: trimmed, folders: self.folders, limit: 10)
             guard !Task.isCancelled else { return }
-            self?.searchNow()
+            self.results = matches; self.selectedIndex = 0
         }
     }
 
@@ -270,8 +274,6 @@ private final class GlobalSearchState: ObservableObject {
             ) ?? .favorites
             let scope: PromptSearch.Scope = preference == .favorites ? .favorites : .recentlyUsed
             results = PromptSearch.search(prompts, query: "", scope: scope, folders: folders, limit: 8)
-        } else {
-            results = PromptSearch.search(prompts, query: trimmed, folders: folders, limit: 10)
         }
         selectedIndex = 0
     }
@@ -328,7 +330,7 @@ private struct GlobalSearchView: View {
                     .font(.system(size: 19, weight: .regular))
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
-                TextField("搜索标题、标签或正文", text: $state.query)
+                TextField("搜索标题、标签", text: $state.query)
                     .textFieldStyle(.plain)
                     .font(.system(size: 19))
                     .focused($searchFocused)
@@ -468,8 +470,8 @@ private struct GlobalSearchView: View {
         HStack(spacing: 14) {
             cover(for: prompt)
             VStack(alignment: .leading, spacing: 5) {
-                Text(prompt.title.isEmpty ? "未命名 Prompt" : prompt.title)
-                    .font(.system(size: 15, weight: .semibold))
+                SearchMatchText(text: prompt.title.isEmpty ? "未命名 Prompt" : prompt.title, query: state.query)
+                    .font(.system(size: 15, weight: .semibold)).help(prompt.title)
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                 if prompt.coverPath == nil {
@@ -480,7 +482,7 @@ private struct GlobalSearchView: View {
                 }
                 HStack(spacing: 5) {
                     ForEach(Array(prompt.tagNames.prefix(3)), id: \.self) { tag in
-                        Text("#\(tag)")
+                        SearchMatchText(text: "#\(tag)", query: state.query)
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
