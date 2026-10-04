@@ -71,9 +71,9 @@ def sign_adhoc(app):
                       framework / "Versions/B/XPCServices/Downloader.xpc",
                       framework / "Versions/B/Autoupdate",
                       framework / "Versions/B/Updater.app", framework):
-        run(["codesign", "--force", "--sign", "-", "--options", "none",
+        run(["codesign", "--force", "--sign", "-", "--options", "0",
              "--preserve-metadata=entitlements", component])
-    run(["codesign", "--force", "--sign", "-", "--options", "none",
+    run(["codesign", "--force", "--sign", "-", "--options", "0",
          "--entitlements", ROOT / "oTATo Prompt.entitlements", app])
 
 
