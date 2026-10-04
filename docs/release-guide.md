@@ -1,89 +1,77 @@
-# oTATo prompt 正式发布
+# oTATo prompt 官网发行
 
 官网：`https://prompt.otato.art/`。更新清单：`https://prompt.otato.art/updates/appcast.xml`。
-面向官网下载发行，使用 Developer ID；不走 Mac App Store。
+通过官网发行，不上架 Mac App Store。
 
-官网产品页已于 2026-10-04 部署至 Cloudflare，线上已检查三个下载入口均为「正式版准备中」，没有将测试包作为正式版分发。正式 appcast 将在首个公证版本发布时部署。
+## 当前发行方式
 
-## 目前的实际状态
+2026-10-05：用户确认暂时无法加入 Apple Developer Program，接受先准备**未公证发行版**。官网下载包将明确注明未公证；首次安装按 DMG 内的「安装说明.pdf」执行系统的「仍要打开」步骤。
 
-2026-10-04：源码候选版本为 1.0（build 6）。已完成 Universal Release 编译检查，但该检查关闭了代码签名，产物不能作为正式下载发布。最新的现有测试 DMG 仍是 build 5。
+未公证路径显式使用 `--distribution unnotarized`。它构建无 `DEBUG` 的 Universal Release，保留 App Sandbox，逐层为 Sparkle 组件和 App 做 ad hoc 签名，再为完整 DMG 生成 EdDSA 更新签名。主程序与 Sparkle 组件不启用 Hardened Runtime，以支持没有 Developer ID 的加载方式。发行记录明确注明没有 Apple 公证。
 
-真实数据代码已通过隔离资料库检查：跨进程保存和重开、中文与 Markdown 原文保留、旧 TXT 记录、标签与嵌套文件夹、封面保留、无效 UTF-8 批量导入回滚、重名文本导出、废纸篓恢复、完整归档、损坏归档拒绝、恢复前安全备份、恢复后再次重开。命令为 `python3 scripts/check_data.py`。这些检查不接触用户默认资料库，不等于真实系统快捷键、菜单栏交互或签名升级已经验收。
+Developer ID 路径保留为 `--distribution developer-id`，且是命令行默认值。它要求有效证书、Hardened Runtime、App 与 DMG 公证及票据验证，任何失败均停止，不会因证书缺失而自动切换发行方式。
 
-发布检查已在 macOS 14、15、26 的 GitHub runner 上全部通过：[检查记录](https://github.com/susu177990-rgb/otato-prompt/actions/runs/37215265212)。检查中发现并修复了 macOS 14 恢复带标签归档时的崩溃：先将恢复的 Prompt 插入上下文，再建立标签关系，v1 数据模型保持不变。
+## 已有验证与待完成项
 
-更新清单生成、固定版本下载地址、安装包长度及 EdDSA 签名校验已在本机使用未公开的测试 DMG 验证。官网正式部署的暂存流程也已检查；该本地检查没有发布安装包或测试更新源，不能代替正式签名升级验收。
+源码候选为 1.0（build 6）。核心数据逻辑已经通过 macOS 14、15、26 的云端检查：[检查记录](https://github.com/susu177990-rgb/otato-prompt/actions/runs/37215265212)。覆盖保存、跨进程重开、中文与 Markdown 保留、标签与嵌套文件夹、封面、批量导入回滚、唯一文件名导出、废纸篓及完整备份恢复。检查中已修复 macOS 14 恢复带标签归档时的崩溃，v1 模型保持不变。
 
-`release.yml` 准备在 main 分支的软件改动提交后构建、签名、公证、发布安装包，并部署官网和更新清单。这个流程仍待真实证书和公证凭据的完整执行验证。首个正式安装包、从旧正式版升级及新版本通知尚未验收。
+未公证发行包、真实更新通知、升级替换及升级后的资料库保留仍在准备和验收。之前的 build 5 测试 DMG 含 `DEBUG`，不启用更新器，不直接用作本次发行包。官网目前保持「正式版准备中」，直到新的发行包通过验收。
 
-发布改动当前位于 `codex/formal-release` 分支。自动发布需要合并到 `main` 并配置下面的全部凭据。
+发布改动在 `codex/formal-release` 分支。自动发布须合并到 `main`，并配置下列变量和凭据。
 
-## 先办理 Apple Developer Program
+## 自动发布配置
 
-用户确认尚未加入付费开发者计划。注册入口：[Apple Developer Program](https://developer.apple.com/programs/enroll/)。独立开发者可以按个人身份注册，需要开启双重认证并使用真实姓名。官方年费为 99 美元；实际支付使用当地币种和页面价格。加入开发者计划不要求上架 App Store。
+仓库：`susu177990-rgb/otato-prompt`。
 
-会员生效后，在本机 Xcode 的 Settings → Accounts 加入 Apple Account，然后创建或导入 **Developer ID Application** 证书及其私钥。[Apple 的证书说明](https://developer.apple.com/help/account/certificates/create-developer-id-certificates/)。只下载一个 `.cer` 而没有对应私钥不能签名。
+仓库 Actions variable **`RELEASE_DISTRIBUTION`** 选择 `unnotarized` 或 `developer-id`；未设置时使用 `developer-id`。
 
-验证命令：
-
-```sh
-security find-identity -v -p codesigning
-python3 scripts/release.py preflight
-```
-
-需要出现有效的 Developer ID Application 身份。Bundle ID 保持 `art.otato.prompt`，v1 数据模型保持不变。
-
-## 自动发布凭据
-
-GitHub 仓库为 `susu177990-rgb/otato-prompt`。Actions 已保存 `SPARKLE_PRIVATE_KEY`；它与 Info.plist 公钥匹配。本机 Sparkle 私钥位于 Keychain 的 `art.otato.prompt` 账户中，不将其提交到仓库。
-
-生成与校验更新签名时通过标准输入传递私钥，避免无人值守的发布任务等待钥匙串授权弹窗。本机临时导出在受限的临时目录内读取后删除；CI 私钥来自 Actions secret。
-
-首次正式发布前仍需在该仓库的 Actions secrets 中配置：
+两种方式都需要：
 
 | Secret | 内容 |
 | --- | --- |
-| `DEVELOPER_ID_P12` | Developer ID Application 证书和私钥的 `.p12` 导出，Base64 编码 |
-| `DEVELOPER_ID_P12_PASSWORD` | 该导出文件的密码 |
-| `APPLE_ID` | 已加入开发者计划的 Apple Account |
-| `APPLE_APP_PASSWORD` | 用于公证的应用专用密码 |
-| `APPLE_TEAM_ID` | 开发者团队 ID |
-| `CLOUDFLARE_API_TOKEN` | 对当前账户的 Workers Scripts、Workers Routes 及相应域名配置有权限的持久 API Token |
+| `SPARKLE_PRIVATE_KEY` | 与 App 公钥匹配的 Ed25519 私钥种子；已保存 |
+| `CLOUDFLARE_API_TOKEN` | 对当前账户 Workers Scripts、Workers Routes 和相应域名配置有权限的持久 API Token；待配置 |
 
-凭据通过 GitHub 的 Secrets 页面或 `gh secret set` 的标准输入写入，不能粘贴到普通聊天、写进脚本或提交 Git。本机 Wrangler OAuth 登录可用于本机部署，但不能替代 CI 所需的持久 API Token。
+只有 `developer-id` 方式额外需要 `DEVELOPER_ID_P12`、`DEVELOPER_ID_P12_PASSWORD`、`APPLE_ID`、`APPLE_APP_PASSWORD`、`APPLE_TEAM_ID`。这些凭据暂未配置，等开发者会员生效后再补齐。
 
-## 发布行为
+Secrets 通过 GitHub Secrets 页面或 `gh secret set` 的标准输入写入，不能粘贴到普通聊天或提交 Git。本机 Wrangler OAuth 可做本机部署，不能替代 CI 所需的持久 Token。本机 Sparkle 私钥位于 Keychain 的 `art.otato.prompt` 账户中；生成签名时通过标准输入传递，临时导出在受限目录读取后立即删除。
 
-- 将经过验证的软件代码合并并推送到 `main`，或手动运行 Signed macOS release workflow。
-- 发布前在 macOS 14、15、26 的 GitHub runner 上执行真实数据逻辑检查。实际窗口、跨应用快捷键和菜单栏仍需要相应系统的 GUI 验收。
-- `scripts/release.py next-build` 从现有发布标签和 Xcode 配置分配递增构建号。对外版本号来自 Xcode 的 `MARKETING_VERSION`。新版本可修改此值，如 `1.0.1`。
-- 构建流程使用 Release、Universal、Hardened Runtime，无 `DEBUG` 覆盖。App 和 DMG 均通过 Developer ID 签名、Apple 公证与票据验证。任何一步失败都停止发布。
-- GitHub Release 使用固定标签 `v<version>-build<build>`，其 DMG 文件统一命名为 `oTATo-prompt.dmg`。官网三个下载按钮直达 `releases/latest/download/oTATo-prompt.dmg`，不再跳到列表页。
-- 更新清单由 Sparkle 工具生成，安装包具有 EdDSA 签名，链接指向固定版本的安装包。自动检查默认每小时一次，由用户确认安装；开发构建不连接正式更新源。
-- 网站与更新清单一起部署到 Cloudflare。仅网站改动会保留最新公开 Release 的 appcast，避免清单回退或丢失。
-- 公开验证脚本检查三个下载按钮、线上清单和实际下载的完整 DMG SHA-256。尚未执行的检查不能记为通过。
+## 手动制作未公证发行包
 
-## 手动制作正式包
-
-先将当前发布源码提交并确认工作区干净，在已安装有效 Developer ID 身份的 Mac 上执行：
+提交源码并确认工作区干净，再执行：
 
 ```sh
 python3 -m venv .build/release-env
 .build/release-env/bin/pip install -r packaging/dmg/requirements.txt
-xcrun notarytool store-credentials OTATO_NOTARY
 .build/release-env/bin/python scripts/release.py build \
+  --distribution unnotarized \
   --version 1.0 --build 6 --tag v1.0-build6 --notes docs/release-notes.md
 ```
 
-`notarytool store-credentials` 用交互方式录入公证凭据。多份签名身份存在时，给构建命令补上 `--identity` 选择正确证书。正式发布不会退回临时签名或跳过公证。
+产物为 `dist/releases/v1.0-build6/` 中的 DMG、签名更新清单与 SHA-256 发行记录。DMG 包含 App、应用程序入口和可离线阅读的中文 PDF 教程。PDF 已预生成并保存在 `packaging/dmg/安装说明.pdf`；重新生成使用 `scripts/build_install_guide.py --font <Noto Sans SC 静态 TTF>`，需要 reportlab。
 
-## 首次发布的验收门槛
+## 自动发布行为
 
-1. 从官网实际下载 DMG，确认正常拖入应用程序并启动。
-2. 在 macOS 14/15 与对应架构上验证真实窗口、菜单栏、跨应用 Option Space、复制、Enter/Esc 和焦点归还。
-3. 对旧测试包的真实资料库先导出归档，再验证安装正式版后数据保留。
-4. 用一份旧的已签名公证构建实测升级，确认下载签名校验、替换、重启、资料库保留和新版本通知。
-5. 官网、下载、版本日志和更新清单的版本一致，公开下载字节与签名验收过的包一致。
+- 软件改动推送到 `main`，或手动运行 Publish macOS release workflow。
+- 先在 macOS 14、15、26 的 runner 检查核心数据流程，再构建所选发行方式。
+- 从现有发行标签和 Xcode 配置分配递增 build；对外版本号来自 `MARKETING_VERSION`。
+- GitHub Release 标签为 `v<version>-build<build>`，DMG 固定名 `oTATo-prompt.dmg`。官网下载按钮直达 `releases/latest/download/oTATo-prompt.dmg`。
+- Sparkle appcast 的下载链接指向固定版本 DMG，签名覆盖整个安装包。自动检查默认每小时一次，由用户选择安装，开发构建不启动更新器。
+- 官网与 appcast 同步部署到 Cloudflare；仅网站变更会保留最新发行清单。未公证发行说明明确标注安装步骤。
+- 公开验证会检查三个直达下载按钮、线上清单、完整下载字节和 SHA-256。
 
-以上门槛未全部通过前，不能将目标标记为完成。
+## 首次发行验收
+
+1. 从官网实际下载并打开 DMG，检查教程可离线阅读，App 能拖入应用程序。
+2. 用系统的「仍要打开」允许首次运行，不关闭全局 Gatekeeper。
+3. 在可用的 Mac 上验证窗口、设置、菜单栏、快捷键和复制；macOS 14/15 的云端数据检查不等于其 GUI 验收。
+4. 从旧的启用更新器的构建实测升级，验证提示、签名、安装替换、重启、数据和封面保留。
+5. 官网、日志、更新清单和实际 DMG 的版本及字节一致。
+
+仅完成编译或生成签名，不能声称以上真实安装和升级已经通过。
+
+## 日后补充 Developer ID
+
+注册 [Apple Developer Program](https://developer.apple.com/programs/enroll/)，在 Xcode Settings → Accounts 创建或导入 Developer ID Application 证书及私钥。只有 `.cer` 没有私钥不能签名。[Apple 证书说明](https://developer.apple.com/help/account/certificates/create-developer-id-certificates/)。
+
+配置 Apple 的 CI secrets，将 `RELEASE_DISTRIBUTION` 切换为 `developer-id`。保留 Bundle ID、Sparkle 公钥和资料库模型，实测从未公证版本升级后再发行公证版本。

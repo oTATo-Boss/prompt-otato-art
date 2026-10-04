@@ -1,4 +1,4 @@
-name: Signed macOS release
+name: Publish macOS release
 
 on:
   workflow_dispatch:
@@ -42,6 +42,7 @@ jobs:
     timeout-minutes: 90
     env:
       GH_TOKEN: ${{ github.token }}
+      RELEASE_DISTRIBUTION: ${{ vars.RELEASE_DISTRIBUTION || 'developer-id' }}
     steps:
       - uses: actions/checkout@v6
       - name: Check required credentials
@@ -56,15 +57,21 @@ jobs:
         run: |
           python3 - <<'PY'
           import os
-          names = ('DEVELOPER_ID_P12', 'DEVELOPER_ID_P12_PASSWORD', 'APPLE_ID',
-                   'APPLE_APP_PASSWORD', 'APPLE_TEAM_ID', 'SPARKLE_PRIVATE_KEY', 'CLOUDFLARE_API_TOKEN')
+          mode = os.environ['RELEASE_DISTRIBUTION']
+          if mode not in ('developer-id', 'unnotarized'):
+              raise SystemExit('Select developer-id or unnotarized in RELEASE_DISTRIBUTION.')
+          names = ('SPARKLE_PRIVATE_KEY', 'CLOUDFLARE_API_TOKEN')
+          if mode == 'developer-id':
+              names += ('DEVELOPER_ID_P12', 'DEVELOPER_ID_P12_PASSWORD', 'APPLE_ID',
+                        'APPLE_APP_PASSWORD', 'APPLE_TEAM_ID')
           missing = [name for name in names if not os.environ.get(name)]
           if missing:
-              raise SystemExit('Formal release requires these repository secrets: ' + ', '.join(missing))
+              raise SystemExit('Release requires these repository secrets: ' + ', '.join(missing))
           PY
       - name: Resolve pinned Sparkle tools
         run: xcodebuild -resolvePackageDependencies -project 'oTATo Prompt.xcodeproj' -scheme 'oTATo Prompt' -derivedDataPath .build/packages
       - name: Import signing and notarization credentials
+        if: env.RELEASE_DISTRIBUTION == 'developer-id'
         env:
           DEVELOPER_ID_P12: ${{ secrets.DEVELOPER_ID_P12 }}
           DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
@@ -85,13 +92,20 @@ jobs:
           TAG="v${VERSION}-build${BUILD}"
           printf 'build=%s\nversion=%s\ntag=%s\n' "$BUILD" "$VERSION" "$TAG" >> "$GITHUB_OUTPUT"
           gh api repos/susu177990-rgb/otato-prompt/releases/generate-notes --method POST -f "tag_name=$TAG" -f "target_commitish=$GITHUB_SHA" --jq .body > .build/release-notes.md
-      - name: Build, sign, notarize and verify the Universal installer
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          if os.environ['RELEASE_DISTRIBUTION'] == 'unnotarized':
+              notes = Path('.build/release-notes.md')
+              notes.write_text('当前版本尚未经 Apple 公证。首次安装请先将 App 拖入应用程序，再按 DMG 内的「安装说明.pdf」允许打开。在线说明：https://prompt.otato.art/help\n\n' + notes.read_text())
+          PY
+      - name: Build and verify the selected Universal distribution
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
           RELEASE_VERSION: ${{ steps.metadata.outputs.version }}
           RELEASE_BUILD: ${{ steps.metadata.outputs.build }}
           RELEASE_TAG: ${{ steps.metadata.outputs.tag }}
-        run: .build/release-env/bin/python scripts/release.py build --version "$RELEASE_VERSION" --build "$RELEASE_BUILD" --tag "$RELEASE_TAG" --notes .build/release-notes.md
+        run: .build/release-env/bin/python scripts/release.py build --distribution "$RELEASE_DISTRIBUTION" --version "$RELEASE_VERSION" --build "$RELEASE_BUILD" --tag "$RELEASE_TAG" --notes .build/release-notes.md
       - name: Publish immutable download and update artifacts
         env:
           RELEASE_TAG: ${{ steps.metadata.outputs.tag }}

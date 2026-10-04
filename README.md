@@ -84,7 +84,7 @@ sips -z 512 768 packaging/dmg/background@2x.png --out packaging/dmg/background.p
 
 ## 正式发布前
 
-当前机器只验证了 macOS 26.6。正式发行还需在 macOS 14/15 实机检查安装、快捷键和窗口行为，使用 Developer ID 签名并公证 DMG，签署 Sparkle 安装包，上传固定版本的 GitHub Release，再发布 appcast 并从旧版本实测升级。在完成这些步骤前，请勿将测试 DMG 作为正式版本分发。
+当前机器只验证了 macOS 26.6。发行还需验证真实安装、快捷键、窗口与 Sparkle 升级行为。用户已接受先准备未公证发行版：使用启用更新器的 Release 构建、ad hoc 代码签名与 EdDSA 更新包签名，并在 DMG 内提供「安装说明.pdf」。现有含 DEBUG 的本地测试包不直接作为发行包。
 
 核心数据流程已通过 macOS 14、15、26 的云端检查，包括跨进程重开和完整归档恢复；这不包含真实窗口、快捷键或签名升级验收。已修复 macOS 14 恢复带标签归档时的崩溃。
 
@@ -92,4 +92,4 @@ sips -z 512 768 packaging/dmg/background@2x.png --out packaging/dmg/background.p
 
 官网与软件的发布配置均在本项目内维护。源码候选为 1.0（build 6）；官网入口直接指向最新正式 DMG。正式版默认每小时检查新版本并显示安装提示，可在设置中关闭；开发构建不会启动更新器。
 
-完整配置与验收状态见 [正式发布指南](docs/release-guide.md)。签名和公证凭据尚未配置齐全，当前不能发布正式安装包。
+完整配置与验收状态见 [发行指南](docs/release-guide.md)。未公证发行路径不要求 Apple 开发者会员；自动部署仍需要 Cloudflare API Token，真实安装和更新验收仍在进行。日后可以切换到 Developer ID 签名公证发行。

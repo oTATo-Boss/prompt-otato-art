@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and verify Developer ID releases. Never accepts unsigned substitutes."""
+"""Build an explicitly selected notarized or unnotarized macOS release."""
 
 import argparse
 import hashlib
@@ -54,12 +54,35 @@ def sparkle_seed(tools):
         return private.read_text()
 
 
+def sparkle_public_key(seed):
+    return run(["swift", "-e", """
+import Foundation
+import CryptoKit
+let encoded = String(data: FileHandle.standardInput.readDataToEndOfFile(), encoding: .utf8)!
+let data = Data(base64Encoded: encoded.trimmingCharacters(in: .whitespacesAndNewlines))!
+let key = try Curve25519.Signing.PrivateKey(rawRepresentation: data)
+print(key.publicKey.rawRepresentation.base64EncodedString())
+"""], stdin=seed, capture=True)
+
+
+def sign_adhoc(app):
+    framework = app / "Contents/Frameworks/Sparkle.framework"
+    for component in (framework / "Versions/B/XPCServices/Installer.xpc",
+                      framework / "Versions/B/XPCServices/Downloader.xpc",
+                      framework / "Versions/B/Autoupdate",
+                      framework / "Versions/B/Updater.app", framework):
+        run(["codesign", "--force", "--sign", "-", "--options", "none",
+             "--preserve-metadata=entitlements", component])
+    run(["codesign", "--force", "--sign", "-", "--options", "none",
+         "--entitlements", ROOT / "oTATo Prompt.entitlements", app])
+
+
 def plist(path):
     with path.open("rb") as handle:
         return plistlib.load(handle)
 
 
-def validate_app(app, version, build):
+def validate_app(app, version, build, distribution):
     info = plist(app / "Contents/Info.plist")
     expected = {"CFBundleIdentifier": "art.otato.prompt",
                 "CFBundleShortVersionString": version, "CFBundleVersion": str(build),
@@ -78,8 +101,11 @@ def validate_app(app, version, build):
     run(["codesign", "--verify", "--deep", "--strict", app])
     details = subprocess.run(["codesign", "-dv", "--verbose=4", str(app)],
                              capture_output=True, text=True, check=True).stderr
-    if "Authority=Developer ID Application:" not in details or "runtime" not in details:
-        raise RuntimeError("The app must use Developer ID signing and Hardened Runtime.")
+    if distribution == "developer-id":
+        if "Authority=Developer ID Application:" not in details or "runtime" not in details:
+            raise RuntimeError("The notarized app must use Developer ID and Hardened Runtime.")
+    elif "Signature=adhoc" not in details:
+        raise RuntimeError("The explicitly unnotarized app must have an ad hoc signature.")
     entitlements = subprocess.run(["codesign", "-d", "--entitlements", ":-", str(app)],
                                   capture_output=True, check=True).stdout
     if plistlib.loads(entitlements).get("com.apple.security.get-task-allow", False):
@@ -108,18 +134,21 @@ def next_build():
 
 
 def build_release(args):
-    matches = identities()
-    if args.identity:
-        matches = [(sha, name) for sha, name in matches
-                   if args.identity in (sha, name)]
-    if len(matches) != 1:
-        raise RuntimeError("Install one valid Developer ID Application certificate with its "
-                           "private key, or select it with --identity. No unsigned release was created.")
-    identity, identity_name = matches[0]
-    team_match = re.search(r"\(([A-Z0-9]{10})\)$", identity_name)
-    if not team_match:
-        raise RuntimeError("Could not determine the Developer ID team.")
-    team = team_match.group(1)
+    notarized = args.distribution == "developer-id"
+    identity, team = "-", None
+    if notarized:
+        matches = identities()
+        if args.identity:
+            matches = [(sha, name) for sha, name in matches
+                       if args.identity in (sha, name)]
+        if len(matches) != 1:
+            raise RuntimeError("Install one valid Developer ID Application certificate with its "
+                               "private key, or select it with --identity. No fallback release was created.")
+        identity, identity_name = matches[0]
+        team_match = re.search(r"\(([A-Z0-9]{10})\)$", identity_name)
+        if not team_match:
+            raise RuntimeError("Could not determine the Developer ID team.")
+        team = team_match.group(1)
     work = ROOT / ".build/releases" / args.tag
     output = ROOT / "dist/releases" / args.tag
     if run(["git", "status", "--porcelain"], capture=True):
@@ -127,49 +156,60 @@ def build_release(args):
     if output.exists():
         raise RuntimeError(f"Output already exists: {output}. Use a new build number.")
     work.mkdir(parents=True, exist_ok=True)
-    output.mkdir(parents=True)
     derived = work / "derived"
     archive = work / "oTATo.xcarchive"
     export = work / "export"
-    run(["xcodebuild", "-project", "oTATo Prompt.xcodeproj", "-scheme", "oTATo Prompt",
+    archive_command = ["xcodebuild", "-project", "oTATo Prompt.xcodeproj", "-scheme", "oTATo Prompt",
          "-configuration", "Release", "-destination", "generic/platform=macOS",
          "-derivedDataPath", derived, "-archivePath", archive,
          "ONLY_ACTIVE_ARCH=NO", "ARCHS=arm64 x86_64", "SWIFT_ACTIVE_COMPILATION_CONDITIONS=",
-         "ENABLE_HARDENED_RUNTIME=YES", "ENABLE_DEBUG_DYLIB=NO", "CODE_SIGN_STYLE=Manual",
-         f"CODE_SIGN_IDENTITY={identity}", f"DEVELOPMENT_TEAM={team}",
-         f"MARKETING_VERSION={args.version}", f"CURRENT_PROJECT_VERSION={args.build}", "archive"])
-    options = work / "ExportOptions.plist"
-    with options.open("wb") as handle:
-        plistlib.dump({"method": "developer-id", "teamID": team, "signingStyle": "manual",
-                      "signingCertificate": identity, "destination": "export"}, handle)
-    run(["xcodebuild", "-exportArchive", "-archivePath", archive,
-         "-exportPath", export, "-exportOptionsPlist", options])
+         f"ENABLE_HARDENED_RUNTIME={'YES' if notarized else 'NO'}",
+         "ENABLE_DEBUG_DYLIB=NO", "CODE_SIGN_STYLE=Manual",
+         f"CODE_SIGN_IDENTITY={identity}", f"DEVELOPMENT_TEAM={team or ''}",
+         f"MARKETING_VERSION={args.version}", f"CURRENT_PROJECT_VERSION={args.build}"]
+    if not notarized:
+        archive_command.append("CODE_SIGNING_ALLOWED=NO")
+    run([*archive_command, "archive"])
     app = export / "oTATo Prompt.app"
-    info = validate_app(app, args.version, args.build)
+    if notarized:
+        options = work / "ExportOptions.plist"
+        with options.open("wb") as handle:
+            plistlib.dump({"method": "developer-id", "teamID": team, "signingStyle": "manual",
+                          "signingCertificate": identity, "destination": "export"}, handle)
+        run(["xcodebuild", "-exportArchive", "-archivePath", archive,
+             "-exportPath", export, "-exportOptionsPlist", options])
+    else:
+        run(["ditto", archive / "Products/Applications/oTATo Prompt.app", app])
+        sign_adhoc(app)
+    info = validate_app(app, args.version, args.build, args.distribution)
     tools = sparkle_bin(derived)
-    public = run([tools / "generate_keys", "--account", SPARKLE_ACCOUNT, "-p"], capture=True)
-    if public != info["SUPublicEDKey"]:
-        raise RuntimeError("The Sparkle key in the Keychain does not match the app's public key.")
     seed = sparkle_seed(tools)
-    zipped = work / "notarization.zip"
-    run(["ditto", "-c", "-k", "--keepParent", app, zipped])
-    # The ticket for the ZIP submission is stapled to its contained app.
-    submission = json.loads(run(["xcrun", "notarytool", "submit", zipped,
-                                 "--keychain-profile", args.notary_profile, "--wait",
-                                 "--output-format", "json"], capture=True))
-    if submission.get("status") != "Accepted":
-        raise RuntimeError(f"App notarization failed: {submission.get('status')}; "
-                           f"submission {submission.get('id')}.")
-    run(["xcrun", "stapler", "staple", app])
-    run(["xcrun", "stapler", "validate", app])
-    run(["spctl", "--assess", "--type", "execute", "--verbose=2", app])
+    if sparkle_public_key(seed) != info["SUPublicEDKey"]:
+        raise RuntimeError("The Sparkle private key does not match the app's public key.")
+    if notarized:
+        zipped = work / "notarization.zip"
+        run(["ditto", "-c", "-k", "--keepParent", app, zipped])
+        # The ticket for the ZIP submission is stapled to its contained app.
+        submission = json.loads(run(["xcrun", "notarytool", "submit", zipped,
+                                     "--keychain-profile", args.notary_profile, "--wait",
+                                     "--output-format", "json"], capture=True))
+        if submission.get("status") != "Accepted":
+            raise RuntimeError(f"App notarization failed: {submission.get('status')}; "
+                               f"submission {submission.get('id')}.")
+        run(["xcrun", "stapler", "staple", app])
+        run(["xcrun", "stapler", "validate", app])
+        run(["spctl", "--assess", "--type", "execute", "--verbose=2", app])
+    output.mkdir(parents=True)
     dmg = output / "oTATo-prompt.dmg"
     run([sys.executable, "-m", "dmgbuild", "-s", ROOT / "packaging/dmg/settings.py",
          "-D", f"app={app}", "oTATo prompt 安装", dmg])
-    run(["codesign", "--force", "--sign", identity, "--timestamp", dmg])
-    notarize(dmg, args.notary_profile)
+    run(["codesign", "--force", "--sign", identity,
+         "--timestamp" if notarized else "--timestamp=none", dmg])
+    if notarized:
+        notarize(dmg, args.notary_profile)
     run(["codesign", "--verify", "--strict", dmg])
-    run(["spctl", "--assess", "--type", "open", "--context", "context:primary-signature", dmg])
+    if notarized:
+        run(["spctl", "--assess", "--type", "open", "--context", "context:primary-signature", dmg])
     run(["hdiutil", "verify", dmg])
     notes = Path(args.notes).resolve()
     if not notes.is_file() or not notes.read_text().strip():
@@ -193,10 +233,11 @@ def build_release(args):
     (output / "release.json").write_text(json.dumps({
         "tag": args.tag, "version": args.version, "build": args.build,
         "commit": run(["git", "rev-parse", "HEAD"], capture=True),
-        "team": team, "dmg": dmg.name, "appcast": feed.name,
+        "team": team, "distribution": args.distribution, "notarized": notarized,
+        "installation_guide": "安装说明.pdf", "dmg": dmg.name, "appcast": feed.name,
         "sha256": checksum,
     }, indent=2) + "\n")
-    print(f"Verified signed and notarized release: {output}")
+    print(f"Verified {args.distribution} release: {output}")
 
 
 def main():
@@ -211,6 +252,8 @@ def main():
     build.add_argument("--notes", required=True)
     build.add_argument("--identity")
     build.add_argument("--notary-profile", default="OTATO_NOTARY")
+    build.add_argument("--distribution", choices=("developer-id", "unnotarized"),
+                       default="developer-id", help="Unnotarized must be explicitly selected.")
     args = parser.parse_args()
     try:
         if args.command == "next-build":
