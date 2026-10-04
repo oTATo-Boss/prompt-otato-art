@@ -4,6 +4,7 @@ struct SearchMatchText: View {
     @Environment(\.appAccentStyle) private var accent
     let text: String
     let query: String
+    var selected = false
 
     var body: some View { Text(highlighted) }
 
@@ -15,8 +16,9 @@ struct SearchMatchText: View {
                   let hit = text.range(of: word, options: [.caseInsensitive, .diacriticInsensitive],
                                        range: cursor..<text.endIndex, locale: Locale(identifier: "en_US_POSIX")) {
                 if let range = Range(hit, in: result) {
-                    result[range].foregroundColor = accent.actionForeground
-                    result[range].backgroundColor = accent.selectedFill.opacity(0.15)
+                    result[range].foregroundColor = selected ? accent.selectedForeground : accent.actionForeground
+                    result[range].backgroundColor = selected
+                        ? accent.selectedForeground.opacity(0.15) : accent.selectedFill.opacity(0.15)
                     result[range].inlinePresentationIntent = .stronglyEmphasized
                 }
                 cursor = hit.upperBound

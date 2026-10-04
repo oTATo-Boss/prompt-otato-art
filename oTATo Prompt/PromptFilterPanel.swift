@@ -333,7 +333,7 @@ private struct PromptFilterRemovalChip: View {
             .frame(height: 24)
             .contentShape(Capsule())
         }
-        .buttonStyle(PromptFilterQuietButtonStyle(cornerRadius: 12))
+        .buttonStyle(PromptFilterQuietButtonStyle(active: true, cornerRadius: 12))
         .accessibilityLabel("移除筛选：\(title)")
         .help("移除筛选：\(title)")
     }
@@ -341,15 +341,17 @@ private struct PromptFilterRemovalChip: View {
 
 private struct PromptFilterQuietButtonStyle: ButtonStyle {
     var selected = false
+    var active = false
     var cornerRadius: CGFloat = 6
 
     func makeBody(configuration: Configuration) -> some View {
-        Surface(configuration: configuration, selected: selected, cornerRadius: cornerRadius)
+        Surface(configuration: configuration, selected: selected, active: active, cornerRadius: cornerRadius)
     }
 
     private struct Surface: View {
         let configuration: ButtonStyle.Configuration
         let selected: Bool
+        let active: Bool
         let cornerRadius: CGFloat
         @Environment(\.appAccentStyle) private var accent
         @Environment(\.isEnabled) private var isEnabled
@@ -358,8 +360,8 @@ private struct PromptFilterQuietButtonStyle: ButtonStyle {
 
         var body: some View {
             configuration.label
-                .foregroundStyle(selected ? accent.selectedForeground : Color.primary)
-                .background(selected ? accent.selectedFill
+                .foregroundStyle(selected || active ? accent.selectedForeground : Color.primary)
+                .background(selected || active ? accent.selectedFill
                             : hovering ? accent.hoverFill : accent.controlFill,
                             in: RoundedRectangle(cornerRadius: cornerRadius))
                 .overlay {

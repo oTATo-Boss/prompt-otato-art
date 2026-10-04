@@ -96,16 +96,20 @@ struct PromptCardView: View {
             .padding(.horizontal, 9).padding(.vertical, 11)
         }
         .modifier(PromptHoverSurface(selected: selected, isCard: true))
-        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 7)
-                .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.75)
+            // Inset the selection ring so card size and grid spacing stay fixed.
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(selected ? accent.selectionOutline : Color(nsColor: .separatorColor),
+                              lineWidth: selected ? 3 : 0.75)
+                .allowsHitTesting(false)
         }
-        .contentShape(RoundedRectangle(cornerRadius: 7))
+        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .onTapGesture(count: 2, perform: onOpen)
         .onTapGesture(perform: onSelect)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(prompt.title)
+        .accessibilityValue(selected ? "已选择" : "未选择")
     }
 
     private var media: some View {
@@ -149,7 +153,7 @@ struct PromptCardView: View {
     }
 }
 
-/// Hover changes only the surface, leaving text, tags and thumbnail loading intact.
+/// Cards keep a neutral selection surface; list rows use a solid theme fill.
 private struct PromptHoverSurface: ViewModifier {
     @Environment(\.appAccentStyle) private var accent
     @State private var isHovering = false
@@ -160,18 +164,20 @@ private struct PromptHoverSurface: ViewModifier {
     func body(content: Content) -> some View {
         if isCard {
             content
+                .foregroundStyle(Color.primary)
                 .background {
-                    RoundedRectangle(cornerRadius: 7)
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .fill(Color(nsColor: .controlBackgroundColor))
                         .overlay {
-                            RoundedRectangle(cornerRadius: 7)
-                                .fill(selected ? accent.softSelection : isHovering ? accent.hoverFill : Color.clear)
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(isHovering && !selected ? accent.hoverFill : Color.clear)
                         }
                 }
                 .onHover { isHovering = $0 }
         } else {
             content
-                .background(selected ? accent.softSelection : isHovering ? accent.hoverFill : Color.clear,
+                .foregroundStyle(selected ? accent.selectedForeground : Color.primary)
+                .background(selected ? accent.selectedFill : isHovering ? accent.hoverFill : Color.clear,
                             in: RoundedRectangle(cornerRadius: 6))
                 .onHover { isHovering = $0 }
         }
@@ -234,14 +240,15 @@ struct PromptListRow: View {
             }
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 6) {
-                    SearchMatchText(text: prompt.title.isEmpty ? "未命名 Prompt" : prompt.title, query: searchQuery)
+                    SearchMatchText(text: prompt.title.isEmpty ? "未命名 Prompt" : prompt.title,
+                                    query: searchQuery, selected: selected)
                         .font(.system(size: 13, weight: .semibold))
                         .lineLimit(1)
                         .help(prompt.title)
                     if prompt.isFavorite {
                         Image(systemName: "star.fill")
                             .font(.system(size: 9))
-                            .foregroundStyle(accent.actionForeground)
+                            .foregroundStyle(selected ? accent.selectedForeground : accent.actionForeground)
                             .accessibilityLabel("已收藏")
                     }
                 }
@@ -252,7 +259,7 @@ struct PromptListRow: View {
                         .lineLimit(1)
                 }
                 .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(selected ? accent.selectedForeground : Color.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }

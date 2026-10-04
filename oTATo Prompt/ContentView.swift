@@ -19,6 +19,7 @@ private enum LibraryCollection: Hashable {
 }
 
 private struct SidebarFolderNode: View {
+    @Environment(\.appAccentStyle) private var accent
     let folder: Folder
     let folders: [Folder]
     let prompts: [Prompt]
@@ -50,9 +51,11 @@ private struct SidebarFolderNode: View {
                     Spacer(minLength: 3)
                     Text(PromptLibrary.folderContents(of: folder.id, prompts: prompts,
                                                      folders: folders).count.formatted())
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.caption)
+                        .foregroundStyle(selectedID == folder.id ? accent.selectedForeground : Color.secondary)
                 }
                 .font(.system(size: 12.5))
+                .foregroundStyle(selectedID == folder.id ? accent.selectedForeground : Color.primary)
                 .padding(.horizontal, 9).frame(height: 28)
                 .contentShape(Rectangle())
                 .modifier(SubtleHoverSurface(selected: selectedID == folder.id))
@@ -147,7 +150,7 @@ private struct SubtleHoverSurface: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .background(selected ? accent.softSelection
+            .background(selected ? accent.selectedFill
                         : isHovering ? accent.hoverFill : Color.clear,
                         in: RoundedRectangle(cornerRadius: cornerRadius))
             .onHover { isHovering = $0 }
@@ -565,9 +568,11 @@ struct ContentView: View {
                 Image(systemName: symbol).frame(width: 16)
                 Text(title).lineLimit(1)
                 Spacer(minLength: 3)
-                Text(count.formatted()).font(.caption).foregroundStyle(.secondary)
+                Text(count.formatted()).font(.caption)
+                    .foregroundStyle(collection == target && !searching ? accent.selectedForeground : Color.secondary)
             }
             .font(.system(size: 12.5))
+            .foregroundStyle(collection == target && !searching ? accent.selectedForeground : Color.primary)
             .padding(.horizontal, 9).frame(height: 28)
             .contentShape(Rectangle())
             .modifier(SubtleHoverSurface(
@@ -920,10 +925,12 @@ struct ContentView: View {
 
     private var viewModePicker: some View {
         Picker(selection: $viewMode) {
-            Image(systemName: "square.grid.2x2")
+            Image(nsImage: viewModeImage("square.grid.2x2", mode: "grid"))
+                .renderingMode(.original)
                 .accessibilityLabel("网格视图")
                 .tag("grid")
-            Image(systemName: "list.bullet")
+            Image(nsImage: viewModeImage("list.bullet", mode: "list"))
+                .renderingMode(.original)
                 .accessibilityLabel("列表视图")
                 .tag("list")
         } label: {
@@ -933,6 +940,16 @@ struct ContentView: View {
         .pickerStyle(.segmented)
         .frame(width: 76)
         .accessibilityLabel("视图方式")
+    }
+
+    private func viewModeImage(_ symbol: String, mode: String) -> NSImage {
+        let color = viewMode == mode ? NSColor(accent.selectedFill) : .secondaryLabelColor
+        let configuration = NSImage.SymbolConfiguration(pointSize: 12, weight: .regular)
+            .applying(NSImage.SymbolConfiguration(paletteColors: [color]))
+        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(configuration) ?? NSImage()
+        image.isTemplate = false
+        return image
     }
 
     private var librarySearchField: some View {
@@ -963,6 +980,7 @@ struct ContentView: View {
             Button { showingFilterPanel.toggle() } label: {
                 HStack(spacing: 5) {
                     Label("筛选", systemImage: "line.3.horizontal.decrease")
+                        .foregroundStyle(libraryFilter.isActive ? accent.selectedForeground : Color.primary)
                     if libraryFilter.isActive {
                         Text(libraryFilter.activeCriterionCount.formatted())
                             .font(.system(size: 10, weight: .semibold).monospacedDigit())

@@ -470,38 +470,39 @@ private struct GlobalSearchView: View {
         HStack(spacing: 14) {
             cover(for: prompt)
             VStack(alignment: .leading, spacing: 5) {
-                SearchMatchText(text: prompt.title.isEmpty ? "未命名 Prompt" : prompt.title, query: state.query)
+                SearchMatchText(text: prompt.title.isEmpty ? "未命名 Prompt" : prompt.title,
+                                query: state.query, selected: selected)
                     .font(.system(size: 15, weight: .semibold)).help(prompt.title)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(selected ? accent.selectedForeground : Color.primary)
                     .lineLimit(1)
                 if prompt.coverPath == nil {
                     Text(PromptPresentation.preview(prompt.content))
                         .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(selected ? accent.selectedForeground : Color.secondary)
                         .lineLimit(1)
                 }
                 HStack(spacing: 5) {
                     ForEach(Array(prompt.tagNames.prefix(3)), id: \.self) { tag in
-                        SearchMatchText(text: "#\(tag)", query: state.query)
+                        SearchMatchText(text: "#\(tag)", query: state.query, selected: selected)
                             .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(selected ? accent.selectedForeground : Color.secondary)
                             .lineLimit(1)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 3)
-                            .background(accent.controlFill, in: Capsule())
+                            .background(selected ? Color.black.opacity(0.08) : accent.controlFill, in: Capsule())
                     }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Image(systemName: "doc.on.doc")
                 .font(.system(size: 17))
-                .foregroundStyle(.primary)
+                .foregroundStyle(selected ? accent.selectedForeground : Color.primary)
                 .frame(width: 29)
                 .accessibilityHidden(true)
         }
         .padding(.horizontal, 12)
         .frame(height: 79)
-        .background(selected ? accent.softSelection : hovered ? accent.hoverFill : Color.clear,
+        .background(selected ? accent.selectedFill : hovered ? accent.hoverFill : Color.clear,
                     in: RoundedRectangle(cornerRadius: 11))
         .contentShape(RoundedRectangle(cornerRadius: 11))
     }

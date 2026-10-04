@@ -31,12 +31,19 @@ struct AppAccentStyle {
         }
     }
 
-    var softSelection: Color {
-        Color(nsColor: .unemphasizedSelectedContentBackgroundColor)
+    var hoverFill: Color {
+        switch palette {
+        case .monochrome: neutralSurface.opacity(0.65)
+        case .notes: selectedFill.opacity(isDark ? 0.18 : 0.20)
+        case .blue: selectedFill.opacity(isDark ? 0.24 : 0.12)
+        }
     }
 
-    var controlFill: Color { softSelection.opacity(0.40) }
-    var hoverFill: Color { softSelection.opacity(0.65) }
+    // Hover uses a translucent tint; selection uses the solid palette color.
+    private var neutralSurface: Color { Color(nsColor: .unemphasizedSelectedContentBackgroundColor) }
+    var controlFill: Color { neutralSurface.opacity(0.40) }
+
+    var selectionOutline: Color { selectedFill }
 
     /// Small accent symbols need more contrast than a large colored fill.
     var actionForeground: Color {

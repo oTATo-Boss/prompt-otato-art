@@ -5,7 +5,7 @@ oTATo prompt 是简体中文 macOS 提示词资料库。提示词和封面保存
 ## 当前交付
 
 - Xcode 工程：`oTATo Prompt.xcodeproj`。最低系统版本为 macOS 14，Bundle ID 为 `art.otato.prompt`。
-- 最新本地测试磁盘映像：`dist/oTATo-prompt-1.0-build4-test-20261002-universal.dmg`，版本 1.0（构建 4），包含 Apple Silicon 与 Intel 两种架构。该目录不纳入源码仓库。
+- 最新本地测试磁盘映像：`dist/oTATo-prompt-1.0-build5-test-20261004-universal.dmg`，版本 1.0（构建 5），包含 Apple Silicon 与 Intel 两种架构。该目录不纳入源码仓库。
 - 测试版以临时签名制作，尚未经过 Developer ID 签名和 Apple 公证。它用于本地验收，不是正式发行版。
 
 ## 安装和试用测试版
@@ -16,7 +16,11 @@ oTATo prompt 是简体中文 macOS 提示词资料库。提示词和封面保存
 2. 从“应用程序”启动。若 macOS 因未公证而阻止打开，先尝试启动一次，再到“系统设置 → 隐私与安全性”选择“仍要打开”。只对确认来自本工程的测试产物执行此操作。
 3. 首次启动的资料库为空。可新建 Prompt，或从应用内导入 UTF-8 编码的 `.md` / `.txt` 文件。
 
+DMG 使用 oTATo 蓝与可爱的提示词卡片背景，左侧为 App，右侧为“应用程序”入口。图标可直接拖动安装；背景包含普通与 Retina 两种分辨率。
+
 在“设置 → 外观 → 高亮配色”中可切换“黑白反色”、“备忘录黄”和“oTATo 蓝”；默认使用黑白反色。App 图标使用透明底的黑、白两套 Logo 线稿，由 macOS 根据**系统图标外观**选择；Finder 和 Dock 的圆角底板由系统绘制。`dist/` 仅保留最新测试 DMG。
+
+悬停使用半透明主题色，侧栏、列表和有效筛选使用实色选中态；网格卡片选中时显示 3 点宽的主题色圆角边框，保留封面和文字区原色。视图切换图标使用主题原色，深色模式下也不变浅。
 
 正文直接按常用 Markdown 排版编辑，保存、复制和导出均使用 Markdown 原文；导入的 `.txt` 也按同一方式管理。全局搜索浮层默认展示收藏，可在“设置 → 快捷键”切换为空搜索时展示最近使用。若看不到菜单栏图标，请检查“设置 → 通用 → 菜单栏显示”已开启。
 
@@ -60,6 +64,23 @@ xcodebuild -project 'oTATo Prompt.xcodeproj' \
 ```
 
 工程通过 Swift Package Manager 固定使用 Sparkle 2.10。测试版不启用公开自动更新；更新清单地址已预留为 `https://otato.art/updates/appcast.xml`。
+
+### 制作品牌安装界面
+
+背景资源与 Finder 布局保存在 `packaging/dmg/`。在仓库根目录使用 [dmgbuild](https://dmgbuild.readthedocs.io/en/latest/settings.html) 打包已构建的 App：
+
+```sh
+python3 -m venv .build/dmg-env
+.build/dmg-env/bin/pip install -r packaging/dmg/requirements.txt
+swift packaging/dmg/render-background.swift
+sips -z 512 768 packaging/dmg/background@2x.png --out packaging/dmg/background.png
+.build/dmg-env/bin/dmgbuild -s packaging/dmg/settings.py \
+  -D 'app=/tmp/otato-release-derived/Build/Products/Release/oTATo Prompt.app' \
+  'oTATo prompt 安装' \
+  'dist/oTATo-prompt-1.0-build5-test-20261004-universal.dmg'
+```
+
+更换 App 路径、版本和日期即可沿用该安装界面。插画由 imagegen 按已确认的预览制作，白色线条 Logo 使用 App 的原始透明 PNG 等比合成；原生 App 图标及应用程序文件夹由 Finder 展示。
 
 ## 正式发布前
 
