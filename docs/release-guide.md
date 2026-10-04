@@ -11,7 +11,13 @@
 
 真实数据代码已通过隔离资料库检查：跨进程保存和重开、中文与 Markdown 原文保留、旧 TXT 记录、标签与嵌套文件夹、封面保留、无效 UTF-8 批量导入回滚、重名文本导出、废纸篓恢复、完整归档、损坏归档拒绝、恢复前安全备份、恢复后再次重开。命令为 `python3 scripts/check_data.py`。这些检查不接触用户默认资料库，不等于真实系统快捷键、菜单栏交互或签名升级已经验收。
 
+发布检查已在 macOS 14、15、26 的 GitHub runner 上全部通过：[检查记录](https://github.com/susu177990-rgb/otato-prompt/actions/runs/37215265212)。检查中发现并修复了 macOS 14 恢复带标签归档时的崩溃：先将恢复的 Prompt 插入上下文，再建立标签关系，v1 数据模型保持不变。
+
+更新清单生成、固定版本下载地址、安装包长度及 EdDSA 签名校验已在本机使用未公开的测试 DMG 验证。官网正式部署的暂存流程也已检查；该本地检查没有发布安装包或测试更新源，不能代替正式签名升级验收。
+
 `release.yml` 准备在 main 分支的软件改动提交后构建、签名、公证、发布安装包，并部署官网和更新清单。这个流程仍待真实证书和公证凭据的完整执行验证。首个正式安装包、从旧正式版升级及新版本通知尚未验收。
+
+发布改动当前位于 `codex/formal-release` 分支。自动发布需要合并到 `main` 并配置下面的全部凭据。
 
 ## 先办理 Apple Developer Program
 
@@ -31,6 +37,8 @@ python3 scripts/release.py preflight
 ## 自动发布凭据
 
 GitHub 仓库为 `susu177990-rgb/otato-prompt`。Actions 已保存 `SPARKLE_PRIVATE_KEY`；它与 Info.plist 公钥匹配。本机 Sparkle 私钥位于 Keychain 的 `art.otato.prompt` 账户中，不将其提交到仓库。
+
+生成与校验更新签名时通过标准输入传递私钥，避免无人值守的发布任务等待钥匙串授权弹窗。本机临时导出在受限的临时目录内读取后删除；CI 私钥来自 Actions secret。
 
 首次正式发布前仍需在该仓库的 Actions secrets 中配置：
 
