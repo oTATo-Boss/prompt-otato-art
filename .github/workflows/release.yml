@@ -87,6 +87,7 @@ jobs:
           gh api repos/susu177990-rgb/otato-prompt/releases/generate-notes --method POST -f "tag_name=$TAG" -f "target_commitish=$GITHUB_SHA" --jq .body > .build/release-notes.md
       - name: Build, sign, notarize and verify the Universal installer
         env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
           RELEASE_VERSION: ${{ steps.metadata.outputs.version }}
           RELEASE_BUILD: ${{ steps.metadata.outputs.build }}
           RELEASE_TAG: ${{ steps.metadata.outputs.tag }}

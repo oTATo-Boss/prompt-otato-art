@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,6 +36,22 @@ def sparkle_bin(derived):
     if not (directory / "generate_appcast").is_file():
         raise RuntimeError("Sparkle release tools are missing from resolved Xcode packages.")
     return directory
+
+
+def sparkle_seed(tools):
+    if os.environ.get("CI") == "true":
+        seed = os.environ.get("SPARKLE_PRIVATE_KEY")
+        if not seed:
+            raise RuntimeError("CI signing requires SPARKLE_PRIVATE_KEY.")
+        return seed
+    # Read through the already authorized exporter. Other Sparkle tools can
+    # otherwise block waiting for a separate Keychain authorization dialog.
+    with tempfile.TemporaryDirectory(prefix="otato-sparkle-") as temporary:
+        private = Path(temporary) / "key"
+        run([tools / "generate_keys", "--account", SPARKLE_ACCOUNT, "-x", private],
+            capture=True)
+        private.chmod(0o600)
+        return private.read_text()
 
 
 def plist(path):
@@ -133,6 +150,7 @@ def build_release(args):
     public = run([tools / "generate_keys", "--account", SPARKLE_ACCOUNT, "-p"], capture=True)
     if public != info["SUPublicEDKey"]:
         raise RuntimeError("The Sparkle key in the Keychain does not match the app's public key.")
+    seed = sparkle_seed(tools)
     zipped = work / "notarization.zip"
     run(["ditto", "-c", "-k", "--keepParent", app, zipped])
     # The ticket for the ZIP submission is stapled to its contained app.
@@ -157,9 +175,10 @@ def build_release(args):
     if not notes.is_file() or not notes.read_text().strip():
         raise RuntimeError("Provide release notes with --notes.")
     shutil.copy2(notes, output / "oTATo-prompt.md")
-    run([tools / "generate_appcast", "--account", SPARKLE_ACCOUNT,
+    run([tools / "generate_appcast", "--ed-key-file", "-",
          "--download-url-prefix", f"https://github.com/{REPO}/releases/download/{args.tag}/",
-         "--link", SITE, "--embed-release-notes", "--maximum-deltas", "0", output])
+         "--link", SITE, "--embed-release-notes", "--maximum-deltas", "0", output],
+        stdin=seed)
     feed = output / "appcast.xml"
     enclosure = ET.parse(feed).find("./channel/item/enclosure")
     ns = "{http://www.andymatuschak.org/xml-namespaces/sparkle}"
@@ -167,8 +186,8 @@ def build_release(args):
         raise RuntimeError("The generated update feed has no EdDSA signature.")
     if int(enclosure.get("length")) != dmg.stat().st_size:
         raise RuntimeError("The update feed size does not match the final installer.")
-    run([tools / "sign_update", "--account", SPARKLE_ACCOUNT, "--verify", dmg,
-         enclosure.get(ns + "edSignature")])
+    run([tools / "sign_update", "--ed-key-file", "-", "--verify", dmg,
+         enclosure.get(ns + "edSignature")], stdin=seed)
     with dmg.open("rb") as handle:
         checksum = hashlib.file_digest(handle, "sha256").hexdigest()
     (output / "release.json").write_text(json.dumps({
