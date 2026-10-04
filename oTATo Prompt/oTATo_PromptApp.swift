@@ -43,6 +43,9 @@ struct oTATo_PromptApp: App {
         .defaultSize(width: 1280, height: 820)
         .windowStyle(.hiddenTitleBar)
         .commands {
+            CommandGroup(after: .appInfo) {
+                CheckForUpdatesCommand(updater: app.updater)
+            }
             CommandGroup(replacing: .newItem) {
                 Button("新建 Prompt") { app.requestNewPrompt() }
                     .keyboardShortcut("n", modifiers: .command)
@@ -79,6 +82,15 @@ struct oTATo_PromptApp: App {
                 .modifier(AppAppearanceModifier())
                 .applyAppAccent()
         }
+    }
+}
+
+private struct CheckForUpdatesCommand: View {
+    @ObservedObject var updater: UpdaterService
+
+    var body: some View {
+        Button("检查更新…") { updater.checkForUpdates() }
+            .disabled(!updater.canCheckForUpdates)
     }
 }
 

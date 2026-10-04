@@ -63,7 +63,7 @@ xcodebuild -project 'oTATo Prompt.xcodeproj' \
   CODE_SIGN_STYLE=Manual build
 ```
 
-工程通过 Swift Package Manager 固定使用 Sparkle 2.10。测试版不启用公开自动更新；更新清单地址已预留为 `https://otato.art/updates/appcast.xml`。
+工程通过 Swift Package Manager 固定使用 Sparkle 2.10。测试版不启用公开自动更新；正式更新清单地址为 `https://prompt.otato.art/updates/appcast.xml`。
 
 ### 制作品牌安装界面
 
@@ -85,3 +85,9 @@ sips -z 512 768 packaging/dmg/background@2x.png --out packaging/dmg/background.p
 ## 正式发布前
 
 当前机器只验证了 macOS 26.6。正式发行还需在 macOS 14/15 实机检查安装、快捷键和窗口行为，使用 Developer ID 签名并公证 DMG，签署 Sparkle 安装包，上传固定版本的 GitHub Release，再发布 appcast 并从旧版本实测升级。在完成这些步骤前，请勿将测试 DMG 作为正式版本分发。
+
+## 正式发行流程
+
+官网与软件的发布配置均在本项目内维护。源码候选为 1.0（build 6）；官网入口直接指向最新正式 DMG。正式版默认每小时检查新版本并显示安装提示，可在设置中关闭；开发构建不会启动更新器。
+
+完整配置与验收状态见 [正式发布指南](docs/release-guide.md)。签名和公证凭据尚未配置齐全，当前不能发布正式安装包。

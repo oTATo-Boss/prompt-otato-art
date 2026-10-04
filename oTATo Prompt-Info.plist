@@ -27,12 +27,20 @@
     <key>LSMinimumSystemVersion</key>
     <string>$(MACOSX_DEPLOYMENT_TARGET)</string>
     <key>SUFeedURL</key>
-    <string>https://otato.art/updates/appcast.xml</string>
+    <string>https://prompt.otato.art/updates/appcast.xml</string>
     <key>SUPublicEDKey</key>
     <string>+vI8HEqq7A1N3azHBl31Znxed52kh13MMb42cClLAIU=</string>
     <key>SUEnableInstallerLauncherService</key>
     <true/>
     <key>SUEnableAutomaticChecks</key>
+    <true/>
+    <key>SUScheduledCheckInterval</key>
+    <integer>3600</integer>
+    <key>SUAutomaticallyUpdate</key>
     <false/>
+    <key>SUEnableSystemProfiling</key>
+    <false/>
+    <key>SUVerifyUpdateBeforeExtraction</key>
+    <true/>
 </dict>
 </plist>

@@ -1,0 +1,115 @@
+name: Signed macOS release
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'oTATo Prompt/**'
+      - 'oTATo Prompt.xcodeproj/**'
+      - 'oTATo Prompt-Info.plist'
+      - 'oTATo Prompt.entitlements'
+      - 'packaging/dmg/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - '.github/workflows/release.yml'
+
+permissions:
+  contents: write
+
+# Website deployments use the same lock so they cannot replace a newer feed.
+concurrency:
+  group: otato-production-publish
+  cancel-in-progress: false
+
+jobs:
+  data:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, macos-15, macos-26]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - name: Validate persistence, imports and backup recovery
+        run: python3 scripts/check_data.py
+
+  release:
+    needs: data
+    runs-on: macos-26
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Check required credentials
+        env:
+          DEVELOPER_ID_P12: ${{ secrets.DEVELOPER_ID_P12 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import os
+          names = ('DEVELOPER_ID_P12', 'DEVELOPER_ID_P12_PASSWORD', 'APPLE_ID',
+                   'APPLE_APP_PASSWORD', 'APPLE_TEAM_ID', 'SPARKLE_PRIVATE_KEY', 'CLOUDFLARE_API_TOKEN')
+          missing = [name for name in names if not os.environ.get(name)]
+          if missing:
+              raise SystemExit('Formal release requires these repository secrets: ' + ', '.join(missing))
+          PY
+      - name: Resolve pinned Sparkle tools
+        run: xcodebuild -resolvePackageDependencies -project 'oTATo Prompt.xcodeproj' -scheme 'oTATo Prompt' -derivedDataPath .build/packages
+      - name: Import signing and notarization credentials
+        env:
+          DEVELOPER_ID_P12: ${{ secrets.DEVELOPER_ID_P12 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: python3 scripts/setup_release_ci.py
+      - name: Install disk image packaging tools
+        run: |
+          python3 -m venv .build/release-env
+          .build/release-env/bin/pip install -r packaging/dmg/requirements.txt
+      - name: Allocate the next build and release notes
+        id: metadata
+        run: |
+          BUILD=$(python3 scripts/release.py next-build)
+          VERSION=$(python3 -c 'import pathlib,re; print(re.search(r"MARKETING_VERSION = ([0-9.]+);", pathlib.Path("oTATo Prompt.xcodeproj/project.pbxproj").read_text()).group(1))')
+          TAG="v${VERSION}-build${BUILD}"
+          printf 'build=%s\nversion=%s\ntag=%s\n' "$BUILD" "$VERSION" "$TAG" >> "$GITHUB_OUTPUT"
+          gh api repos/susu177990-rgb/otato-prompt/releases/generate-notes --method POST -f "tag_name=$TAG" -f "target_commitish=$GITHUB_SHA" --jq .body > .build/release-notes.md
+      - name: Build, sign, notarize and verify the Universal installer
+        env:
+          RELEASE_VERSION: ${{ steps.metadata.outputs.version }}
+          RELEASE_BUILD: ${{ steps.metadata.outputs.build }}
+          RELEASE_TAG: ${{ steps.metadata.outputs.tag }}
+        run: .build/release-env/bin/python scripts/release.py build --version "$RELEASE_VERSION" --build "$RELEASE_BUILD" --tag "$RELEASE_TAG" --notes .build/release-notes.md
+      - name: Publish immutable download and update artifacts
+        env:
+          RELEASE_TAG: ${{ steps.metadata.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.metadata.outputs.version }}
+          RELEASE_BUILD: ${{ steps.metadata.outputs.build }}
+        run: |
+          gh release create "$RELEASE_TAG" "dist/releases/$RELEASE_TAG/oTATo-prompt.dmg" "dist/releases/$RELEASE_TAG/appcast.xml" "dist/releases/$RELEASE_TAG/release.json" --target "$GITHUB_SHA" --title "oTATo prompt $RELEASE_VERSION（构建 $RELEASE_BUILD）" --notes-file .build/release-notes.md --latest
+          python3 scripts/prepare_website.py --appcast "dist/releases/$RELEASE_TAG/appcast.xml"
+      - name: Publish website and update feed together
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          wranglerVersion: '4.147.0'
+          command: deploy --config packaging/website/wrangler.jsonc
+      - name: Verify public download and update feed
+        run: python3 scripts/verify_live_release.py "${{ steps.metadata.outputs.tag }}"
+      - name: Delete the ephemeral signing Keychain
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/otato-release.keychain-db" ]; then
+            security delete-keychain "$RUNNER_TEMP/otato-release.keychain-db"
+          fi

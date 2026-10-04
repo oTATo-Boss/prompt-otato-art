@@ -1,0 +1,32 @@
+name: Publish website
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'website/**'
+      - 'packaging/website/**'
+      - 'scripts/prepare_website.py'
+      - '.github/workflows/website.yml'
+permissions:
+  contents: read
+concurrency:
+  group: otato-production-publish
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Preserve the latest released update feed
+        run: |
+          mkdir -p .build/published
+          gh release download --repo susu177990-rgb/otato-prompt --pattern appcast.xml --dir .build/published
+          python3 scripts/prepare_website.py --appcast .build/published/appcast.xml
+      - uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          wranglerVersion: '4.147.0'
+          command: deploy --config packaging/website/wrangler.jsonc
