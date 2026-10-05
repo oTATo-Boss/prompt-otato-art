@@ -5,7 +5,7 @@ from html.parser import HTMLParser
 import json
 import sys
 import time
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 import xml.etree.ElementTree as ET
 
 repo = "susu177990-rgb/otato-prompt"
@@ -15,8 +15,13 @@ base = f"https://github.com/{repo}/releases/download/{tag}"
 download = f"https://github.com/{repo}/releases/latest/download/oTATo-prompt.dmg"
 
 
+def request(url):
+    # Identify CI requests explicitly; Cloudflare rejects the generic urllib agent.
+    return Request(url, headers={"User-Agent": "oTATo-release-verifier/1.0"})
+
+
 def fetch(url):
-    with urlopen(url, timeout=60) as response:
+    with urlopen(request(url), timeout=60) as response:
         return response.read()
 
 
@@ -50,7 +55,7 @@ for attempt in range(12):
             raise ValueError("The feed must point to an immutable versioned installer URL.")
         digest = hashlib.sha256()
         length = 0
-        with urlopen(download, timeout=60) as response:
+        with urlopen(request(download), timeout=60) as response:
             disposition = response.headers.get("Content-Disposition", "")
             if "oTATo-prompt.dmg" not in disposition:
                 raise ValueError("The download response must identify the DMG attachment.")

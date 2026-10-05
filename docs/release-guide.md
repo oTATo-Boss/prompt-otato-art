@@ -11,15 +11,15 @@
 
 Developer ID 路径保留为 `--distribution developer-id`，且是命令行默认值。它要求有效证书、Hardened Runtime、App 与 DMG 公证及票据验证，任何失败均停止，不会因证书缺失而自动切换发行方式。
 
-## 已有验证与待完成项
+## 发行与验证记录
 
-源码候选为 1.0（build 6）。核心数据逻辑已经通过 macOS 14、15、26 的云端检查：[检查记录](https://github.com/susu177990-rgb/otato-prompt/actions/runs/37215265212)。覆盖保存、跨进程重开、中文与 Markdown 保留、标签与嵌套文件夹、封面、批量导入回滚、唯一文件名导出、废纸篓及完整备份恢复。检查中已修复 macOS 14 恢复带标签归档时的崩溃，v1 模型保持不变。
+已公开发布 1.0（build 6）。核心数据逻辑已经通过 macOS 14、15、26 的云端检查：[检查记录](https://github.com/susu177990-rgb/otato-prompt/actions/runs/37215265212)。覆盖保存、跨进程重开、中文与 Markdown 保留、标签与嵌套文件夹、封面、批量导入回滚、唯一文件名导出、废纸篓及完整备份恢复。检查中已修复 macOS 14 恢复带标签归档时的崩溃，v1 模型保持不变。
 
 已生成 1.0（build 6）的未公证 Universal Release DMG，验证了 ad hoc 代码签名、完整包 EdDSA 更新签名、DMG 完整性与 SHA-256。挂载后确认包含 App、应用程序入口和「安装说明.pdf」，PDF 与打包源文件一致，嵌入中文字体且已检查排版。安装说明会随今后的 DMG 自动打包。
 
-已在独立沙盒资料库验证实际升级：自动检查回调发现 build 6（非手动触发），下载、EdDSA 校验、替换并重启成功；随后用生产界面手动检查 build 7，显示更新说明，通过包含教程的 DMG 完成安装并重启。两次升级均保留正文、中文与 Unicode、标签、收藏、文件夹及封面字节；生产界面可见保留的记录。测试 App 安装在 `/Applications`，使用独立 Bundle ID，不访问用户正式资料库。官网目前保持「正式版准备中」，公开发布与 CI 部署待完成。
+已在独立沙盒资料库验证实际升级：自动检查回调发现 build 6（非手动触发），下载、EdDSA 校验、替换并重启成功；随后用生产界面手动检查 build 7，显示更新说明，通过包含教程的 DMG 完成安装并重启。两次升级均保留正文、中文与 Unicode、标签、收藏、文件夹及封面字节；生产界面可见保留的记录。测试 App 安装在 `/Applications`，使用独立 Bundle ID，不访问用户正式资料库。官网三个按钮已启用并指向最新 DMG，浏览器实际下载、公开完整包 SHA-256 及线上签名更新清单一致性检查通过。
 
-发布改动在 `codex/formal-release` 分支。自动发布须合并到 `main`，并配置下列变量和凭据。
+发布配置已合并至 `main`。软件改动推送或合并到 `main` 会触发自动发布。
 
 ## 自动发布配置
 
@@ -32,7 +32,7 @@ Developer ID 路径保留为 `--distribution developer-id`，且是命令行默�
 | Secret | 内容 |
 | --- | --- |
 | `SPARKLE_PRIVATE_KEY` | 与 App 公钥匹配的 Ed25519 私钥种子；已保存 |
-| `CLOUDFLARE_API_TOKEN` | 当前账户 Workers Scripts 编辑、otato.art 的 Workers Routes 编辑及区域只读；已保存，首次 CI 部署待验证 |
+| `CLOUDFLARE_API_TOKEN` | 当前账户 Workers Scripts 编辑、otato.art 的 Workers Routes 编辑及区域只读；已保存，CI 部署已通过 |
 
 只有 `developer-id` 方式额外需要 `DEVELOPER_ID_P12`、`DEVELOPER_ID_P12_PASSWORD`、`APPLE_ID`、`APPLE_APP_PASSWORD`、`APPLE_TEAM_ID`。这些凭据暂未配置，等开发者会员生效后再补齐。
 
