@@ -17,7 +17,7 @@ Developer ID 路径保留为 `--distribution developer-id`，且是命令行默�
 
 已生成 1.0（build 6）的未公证 Universal Release DMG，验证了 ad hoc 代码签名、完整包 EdDSA 更新签名、DMG 完整性与 SHA-256。挂载后确认包含 App、应用程序入口和「安装说明.pdf」，PDF 与打包源文件一致，嵌入中文字体且已检查排版。安装说明会随今后的 DMG 自动打包。
 
-真实更新通知、升级替换及升级后的资料库保留尚未通过验收。隔离的旧版测试 App 已能启动，但选择封面后的原生界面读取持续超时；进程检查显示仍在正常事件循环中，不能据此声称 App 崩溃或升级成功。之前的 build 5 测试 DMG 含 `DEBUG`，不启用更新器，不直接用作本次发行包。官网目前保持「正式版准备中」，直到新的发行包通过验收。
+已在独立沙盒资料库验证实际升级：自动检查回调发现 build 6（非手动触发），下载、EdDSA 校验、替换并重启成功；随后用生产界面手动检查 build 7，显示更新说明，通过包含教程的 DMG 完成安装并重启。两次升级均保留正文、中文与 Unicode、标签、收藏、文件夹及封面字节；生产界面可见保留的记录。测试 App 安装在 `/Applications`，使用独立 Bundle ID，不访问用户正式资料库。官网目前保持「正式版准备中」，公开发布与 CI 部署待完成。
 
 发布改动在 `codex/formal-release` 分支。自动发布须合并到 `main`，并配置下列变量和凭据。
 
@@ -25,14 +25,14 @@ Developer ID 路径保留为 `--distribution developer-id`，且是命令行默�
 
 仓库：`susu177990-rgb/otato-prompt`。
 
-仓库 Actions variable **`RELEASE_DISTRIBUTION`** 选择 `unnotarized` 或 `developer-id`；未设置时使用 `developer-id`。
+仓库 Actions variable **`RELEASE_DISTRIBUTION`** 当前已设为 `unnotarized`；可选择 `unnotarized` 或 `developer-id`；未设置时使用 `developer-id`。
 
 两种方式都需要：
 
 | Secret | 内容 |
 | --- | --- |
 | `SPARKLE_PRIVATE_KEY` | 与 App 公钥匹配的 Ed25519 私钥种子；已保存 |
-| `CLOUDFLARE_API_TOKEN` | 对当前账户 Workers Scripts、Workers Routes 和相应域名配置有权限的持久 API Token；待配置 |
+| `CLOUDFLARE_API_TOKEN` | 当前账户 Workers Scripts 编辑、otato.art 的 Workers Routes 编辑及区域只读；已保存，首次 CI 部署待验证 |
 
 只有 `developer-id` 方式额外需要 `DEVELOPER_ID_P12`、`DEVELOPER_ID_P12_PASSWORD`、`APPLE_ID`、`APPLE_APP_PASSWORD`、`APPLE_TEAM_ID`。这些凭据暂未配置，等开发者会员生效后再补齐。
 

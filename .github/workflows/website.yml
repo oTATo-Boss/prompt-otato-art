@@ -23,8 +23,13 @@ jobs:
       - name: Preserve the latest released update feed
         run: |
           mkdir -p .build/published
-          gh release download --repo susu177990-rgb/otato-prompt --pattern appcast.xml --dir .build/published
-          python3 scripts/prepare_website.py --appcast .build/published/appcast.xml
+          TAG=$(gh release list --repo susu177990-rgb/otato-prompt --limit 1 --exclude-drafts --exclude-pre-releases --json tagName --jq '.[0].tagName // empty')
+          if [ -n "$TAG" ]; then
+            gh release download "$TAG" --repo susu177990-rgb/otato-prompt --pattern appcast.xml --dir .build/published
+            python3 scripts/prepare_website.py --appcast .build/published/appcast.xml
+          else
+            python3 scripts/prepare_website.py --preview
+          fi
       - uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
