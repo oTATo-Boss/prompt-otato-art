@@ -51,6 +51,7 @@ final class AppCoordinator: NSObject, ObservableObject {
     private var editorToggleFavorite: (() -> Void)?
     private var editorOwner: UUID?
     private var toastTask: Task<Void, Never>?
+    private var updaterObservation: AnyCancellable?
     private var globalSearchController: GlobalSearchController?
     private var hotkeyManager: GlobalHotKeyManager?
     private var started = false
@@ -69,6 +70,9 @@ final class AppCoordinator: NSObject, ObservableObject {
             self.menuBarEnabled = defaults.bool(forKey: "menuBarEnabled")
         }
         super.init()
+        updaterObservation = updater.objectWillChange.sink { [weak self] in
+            self?.objectWillChange.send()
+        }
     }
 
     func start() {

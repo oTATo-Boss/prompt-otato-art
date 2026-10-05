@@ -412,6 +412,17 @@ struct AppSettingsView: View {
                     .appSecondaryAction()
                     .disabled(!app.updater.canCheckForUpdates)
             }
+            Divider().padding(.leading, 35)
+            settingsRow("自动检查更新", symbol: "bell.badge",
+                        subtitle: "每小时检查新版本，有更新时提醒你") {
+                Toggle("自动检查更新", isOn: Binding(
+                    get: { app.updater.automaticallyChecksForUpdates },
+                    set: { app.updater.setAutomaticallyChecksForUpdates($0) }
+                ))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .disabled(!app.updater.isAvailable)
+            }
         }
     }
 

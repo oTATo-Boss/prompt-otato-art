@@ -6,3 +6,8 @@ DerivedData/
 *.dSYM/
 *.otatoarchive
 dist/
+.wrangler/
+__pycache__/
+*.pyc
+*.p12
+*.p8

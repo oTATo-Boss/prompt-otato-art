@@ -203,7 +203,7 @@ enum PromptArchiveService {
                     ))
                 }
                 for prompt in incoming.prompts {
-                    context.insert(Prompt(
+                    let restored = Prompt(
                         id: prompt.id, title: prompt.title, content: prompt.content,
                         formatRaw: prompt.formatRaw, folderID: prompt.folderID,
                         isFavorite: prompt.isFavorite,
@@ -215,9 +215,12 @@ enum PromptArchiveService {
                         coverCropHeight: prompt.coverCropHeight,
                         createdAt: prompt.createdAt, updatedAt: prompt.updatedAt,
                         lastUsedAt: prompt.lastUsedAt, sortIndex: prompt.sortIndex,
-                        deletedAt: prompt.deletedAt,
-                        tags: prompt.tagIDs.compactMap { tagsByID[$0] }
-                    ))
+                        deletedAt: prompt.deletedAt
+                    )
+                    context.insert(restored)
+                    // macOS 14 requires both records in the same context before
+                    // a relationship can connect them.
+                    restored.tags = prompt.tagIDs.compactMap { tagsByID[$0] }
                 }
                 try context.save()
             }

@@ -9,7 +9,10 @@ if not app.is_dir() or app.suffix != ".app":
 assets = Path(defines.get("assets", "packaging/dmg")).expanduser().resolve()
 format = "UDZO"
 filesystem = "HFS+"
-files = [str(app)]
+guide = assets / "安装说明.pdf"
+if not guide.is_file():
+    raise ValueError("The offline installation guide is missing from packaging/dmg")
+files = [str(app), str(guide)]
 symlinks = {"应用程序": "/Applications"}
 background = str(assets / "background.png")
 
@@ -26,4 +29,4 @@ grid_spacing = 90
 icon_size = 120
 text_size = 14
 label_pos = "bottom"
-icon_locations = {app.name: (229, 231), "应用程序": (555, 231)}
+icon_locations = {app.name: (229, 231), "应用程序": (555, 231), guide.name: (689, 231)}

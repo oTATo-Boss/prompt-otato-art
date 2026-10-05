@@ -1,0 +1,5 @@
+@font-face{font-family:Noto;src:url(fonts/noto-sans-sc.woff2) format("woff2");font-display:swap}
+:root{color-scheme:light;font-family:Noto,system-ui,sans-serif;color:#161616;background:#f3f2ec}
+*{box-sizing:border-box}body{margin:0}main{max-width:800px;margin:auto;padding:48px 24px 80px}
+a{color:#2b5ffc;text-underline-offset:4px}nav{margin-bottom:56px}h1{font-size:clamp(32px,6vw,48px);letter-spacing:-.05em;line-height:1.2}h2{margin-top:40px;font-size:23px}
+p,li{font-size:16px;line-height:1.9}li{margin:12px 0}code{font-size:.9em;background:#e7e6df;padding:2px 5px;border-radius:4px}.date{color:#666;font-size:13px}

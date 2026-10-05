@@ -1,0 +1,19 @@
+name: Release data checks
+on:
+  workflow_dispatch:
+  push:
+    branches: ['codex/**']
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  data:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, macos-15, macos-26]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - run: python3 scripts/check_data.py

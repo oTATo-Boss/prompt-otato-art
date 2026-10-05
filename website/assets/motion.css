@@ -1,0 +1,112 @@
+/* Each chapter keeps its ordinary layout when motion is reduced. */
+.quick-section{display:block}
+.quick-scene{display:grid;grid-template-columns:38% 59%;gap:3%;align-items:center}
+.quick-copy h2 span{display:block}
+.hero-masthead>span,.continue-word>.letter{display:inline-block}
+
+:root[data-story="immersive"] .story-track{padding:0;max-height:none;min-height:0;overflow:visible;position:relative}
+:root[data-story="immersive"] .hero{height:230svh}
+:root[data-story="immersive"] .editor-section{height:235svh}
+:root[data-story="immersive"] .desktop-section{height:240svh}
+:root[data-story="immersive"] .quick-section{height:205svh}
+:root[data-story="immersive"] .continue-section{height:160svh}
+:root[data-story="immersive"] .scene{position:sticky;top:0;height:100svh;overflow:hidden;isolation:isolate}
+:root[data-story="immersive"] .hero-scene,:root[data-story="immersive"] .quick-scene,:root[data-story="immersive"] .continue-scene{background:var(--ink);color:var(--paper)}
+:root[data-story="immersive"] .editor-scene{background:var(--blue);padding:26px var(--gutter)}
+:root[data-story="immersive"] .desktop-scene{background:var(--paper);color:var(--ink);padding:45px var(--gutter)}
+:root[data-story="immersive"] .hero-masthead{top:8svh;font-size:28.5vw;transform:translate3d(var(--tx,0px),var(--ty,0px),0) scale(1.26,.83);opacity:var(--alpha,1)}
+:root[data-story="immersive"] .hero-interface{left:0;top:0;width:100vw;transform-origin:0 0;transform:translate3d(var(--tx,28vw),var(--ty,25svh),0) rotate(var(--rot,4deg)) scale(var(--scale,1.06))}
+:root[data-story="immersive"] .hero-window{aspect-ratio:2692/1230;border-radius:18px}
+:root[data-story="immersive"] .hero-copy{bottom:115px;width:44%;transform:translateY(var(--ty,0px));opacity:var(--alpha,1)}
+:root[data-story="immersive"] .hero-copy h1{font-size:clamp(44px,5.5vw,96px)}
+:root[data-story="immersive"] .hero-copy>p{max-width:24vw}
+:root[data-story="immersive"] .scroll-tab{bottom:0;height:74px;overflow:hidden}
+:root[data-story="immersive"] .scroll-tab>span,:root[data-story="immersive"] .scroll-tab>.icon{position:relative}
+:root[data-story="immersive"] .scroll-tab>.icon{animation:scroll-cue 1.8s ease-in-out infinite}
+
+:root[data-story="immersive"] .editor-layout{display:block;min-height:0;height:calc(100svh - 125px);margin-top:45px}
+:root[data-story="immersive"] .section-kicker{margin:0}
+:root[data-story="immersive"] .editor-copy{position:absolute;left:0;top:0}
+:root[data-story="immersive"] .display-stack{font-size:min(12vw,21svh);transform:none}
+:root[data-story="immersive"] .display-stack span{transform:translate3d(var(--tx,0px),var(--ty,0px),0);opacity:var(--alpha,1)}
+:root[data-story="immersive"] .editor-copy>p{font-size:clamp(17px,1.9vw,28px);transform:translateY(var(--ty,0px));opacity:var(--alpha,1)}
+:root[data-story="immersive"] .editor-interface{left:0;top:0;margin:0;width:min(62vw,calc((100svh - 165px)*1.39));transform-origin:0 0;transform:translate3d(var(--tx,110vw),var(--ty,10svh),0) rotate(var(--rot,8deg)) scale(var(--scale,.85))}
+:root[data-story="immersive"] .section-caption{position:absolute;left:var(--gutter);right:var(--gutter);bottom:25px;margin:0;transform:translateY(var(--ty,0px));opacity:var(--alpha,1)}
+
+:root[data-story="immersive"] .desktop-copy{transform:translateY(var(--ty,0px));opacity:var(--alpha,1)}
+:root[data-story="immersive"] .desktop-index{bottom:12%;transform:translateY(var(--ty,0px));opacity:var(--alpha,1)}
+:root[data-story="immersive"] .physical-laptop{position:absolute;left:0;top:0;bottom:auto;margin:0;width:min(86vw,138svh);transform-origin:0 0;transform:translate3d(var(--tx,30vw),var(--ty,30svh),0) scale(var(--scale,.66)) rotate(var(--rot,-5deg))}
+:root[data-story="immersive"] .platform-strip{bottom:26px;opacity:var(--alpha,1)}
+
+:root[data-story="immersive"] .quick-scene{display:block;padding:50px var(--gutter)}
+:root[data-story="immersive"] .quick-copy{position:absolute;left:var(--gutter);top:23%;width:42%}
+:root[data-story="immersive"] .quick-copy h2 .line-mask{overflow:hidden}
+:root[data-story="immersive"] .quick-copy h2 .line-mask>span{transform:translateY(var(--ty,0px));opacity:var(--alpha,1)}
+:root[data-story="immersive"] .shortcut-key{transform:scale(var(--scale,1));box-shadow:0 0 0 var(--halo,0px) #2b5ffc18}
+:root[data-story="immersive"] .quick-copy>p{transform:translateY(var(--ty,0px));opacity:var(--alpha,1)}
+:root[data-story="immersive"] .quick-interface{position:absolute;left:0;top:0;width:min(49vw,calc((100svh - 170px)*1.17));margin:0;transform-origin:50% 50%;transform:translate3d(var(--tx,65vw),var(--ty,55svh),0) scale(var(--scale,.55)) rotate(var(--rot,8deg));opacity:var(--alpha,0)}
+
+:root[data-story="immersive"] .continue-scene{display:flex;flex-direction:column;padding:40px var(--gutter) 26px}
+:root[data-story="immersive"] .continue-word{margin-top:auto;transform:translateY(var(--ty,0px));overflow:hidden;padding-block:.15em;line-height:1.1}
+:root[data-story="immersive"] .continue-word>.letter{transform:translateY(var(--ty,0%)) rotate(var(--rot,0deg));opacity:var(--alpha,1)}
+:root[data-story="immersive"] .continue-row{margin-top:0;transform:translateY(var(--ty,0px));opacity:var(--alpha,1)}
+:root[data-story="immersive"] .footer-line{margin-top:auto}
+
+:root[data-story="immersive"] .scene .hero-masthead,:root[data-story="immersive"] .scene .hero-interface,:root[data-story="immersive"] .scene .editor-interface,:root[data-story="immersive"] .scene .physical-laptop,:root[data-story="immersive"] .scene .quick-interface{will-change:auto}
+:root[data-story="immersive"] .scene.is-near .hero-masthead,:root[data-story="immersive"] .scene.is-near .hero-interface,:root[data-story="immersive"] .scene.is-near .editor-interface,:root[data-story="immersive"] .scene.is-near .physical-laptop,:root[data-story="immersive"] .scene.is-near .quick-interface{will-change:transform,opacity}
+:root[data-story="immersive"][data-ready="true"] .hero-masthead>span{animation:brand-arrive 1s cubic-bezier(.22,1,.36,1) both;animation-delay:calc(var(--letter-index)*80ms)}
+:root[data-story="immersive"][data-ready="true"] .hero-copy h1{animation:copy-arrive .85s cubic-bezier(.22,1,.36,1) .25s both}
+:root[data-story="immersive"][data-ready="true"] .hero-copy>p:not(.visually-hidden){animation:copy-arrive .85s cubic-bezier(.22,1,.36,1) .4s both}
+
+/* Compact landscape keeps continuous chapters, with stronger entrances. */
+:root[data-story="flow"][data-motion="full"] .editor-interface,:root[data-story="flow"][data-motion="full"] .quick-interface{transform:translate3d(var(--tx,0px),var(--ty,0px),0) rotate(var(--rot,0deg)) scale(var(--scale,1));opacity:var(--alpha,1)}
+:root[data-story="flow"][data-motion="full"] .physical-laptop{transform:translateY(var(--ty,0px)) scale(var(--scale,1));transform-origin:center bottom}
+:root[data-story="flow"][data-motion="full"] .continue-word>.letter{transform:translateY(var(--ty,0%));opacity:var(--alpha,1)}
+:root[data-motion="reduced"] .hero-masthead>span,:root[data-motion="reduced"] .continue-word>.letter{transform:none;opacity:1}
+
+@media(max-width:760px),(max-width:960px) and (orientation:portrait){
+  .quick-scene{grid-template-columns:1fr;gap:0}
+  :root[data-story="immersive"] .hero{height:200svh}
+  :root[data-story="immersive"] .editor-section{height:220svh}
+  :root[data-story="immersive"] .desktop-section{height:220svh}
+  :root[data-story="immersive"] .quick-section{height:200svh}
+  :root[data-story="immersive"] .continue-section{height:150svh}
+  :root[data-story="immersive"] .hero-masthead{top:12svh;font-size:30vw}
+  :root[data-story="immersive"] .hero-interface{width:138vw}
+  :root[data-story="immersive"] .hero-copy{width:calc(100% - 48px);bottom:105px}
+  :root[data-story="immersive"] .hero-copy h1{font-size:clamp(40px,11vw,76px)}
+  :root[data-story="immersive"] .hero-copy>p{max-width:28em}
+  :root[data-story="immersive"] .scroll-tab{height:64px}
+  :root[data-story="immersive"] .editor-scene{padding-top:27px}
+  :root[data-story="immersive"] .editor-layout{margin-top:38px;height:calc(100svh - 155px)}
+  :root[data-story="immersive"] .editor-copy{display:flex;align-items:flex-end;justify-content:space-between;width:100%;gap:18px}
+  :root[data-story="immersive"] .display-stack{font-size:clamp(78px,23vw,136px)}
+  :root[data-story="immersive"] .editor-copy>p{font-size:15px;max-width:7em;margin-bottom:0;line-height:1.7;white-space:normal}
+  :root[data-story="immersive"] .editor-interface{width:94vw}
+  :root[data-story="immersive"] .section-caption{bottom:23px;font-size:10px}
+  :root[data-story="immersive"] .desktop-scene{padding-top:36px}
+  :root[data-story="immersive"] .desktop-copy{width:100%}
+  :root[data-story="immersive"] .desktop-copy h2{font-size:clamp(32px,8.6vw,50px)}
+  :root[data-story="immersive"] .desktop-index{position:absolute;left:var(--gutter);right:var(--gutter);bottom:15%;width:auto;margin:0;display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+  :root[data-story="immersive"] .desktop-index a{min-height:44px;font-size:15px}
+  :root[data-story="immersive"] .physical-laptop{width:118vw}
+  :root[data-story="immersive"] .platform-strip{position:absolute;left:var(--gutter);right:var(--gutter);bottom:27px;margin:0}
+  :root[data-story="immersive"] .quick-scene{padding-top:38px}
+  :root[data-story="immersive"] .quick-copy{top:5%;width:calc(100% - 48px)}
+  :root[data-story="immersive"] .quick-copy h2{font-size:clamp(38px,10.8vw,70px)}
+  :root[data-story="immersive"] .shortcut-key{margin-top:18px}
+  :root[data-story="immersive"] .quick-interface{width:min(85vw,49svh)}
+  :root[data-story="immersive"] .continue-scene{padding-top:35px}
+  :root[data-story="immersive"] .continue-word{font-size:16.4vw;overflow:visible}
+  :root[data-story="immersive"] .continue-row{flex-direction:column;align-items:flex-start;gap:25px}
+  :root[data-story="immersive"] .footer-line{margin-bottom:0}
+}
+@media(max-width:380px){
+  :root[data-story="immersive"] .hero-copy{width:calc(100% - 40px)}
+  :root[data-story="immersive"] .quick-copy{width:calc(100% - 40px)}
+  :root[data-story="immersive"] .display-stack{font-size:78px}
+  :root[data-story="immersive"] .editor-copy>p{font-size:13px;max-width:6em}
+}
+@keyframes brand-arrive{from{transform:translateY(42%) rotate(7deg);opacity:0}to{transform:translateY(0) rotate(0);opacity:1}}
+@keyframes copy-arrive{from{transform:translateY(35px);opacity:0}to{transform:translateY(0);opacity:1}}
+@keyframes scroll-cue{0%,100%{transform:translateY(-4px)}50%{transform:translateY(5px)}}
