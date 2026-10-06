@@ -2,24 +2,21 @@
 .quick-section{display:block}
 .quick-scene{display:grid;grid-template-columns:38% 59%;gap:3%;align-items:center}
 .quick-copy h2 span{display:block}
-.hero-masthead>span,.continue-word>.letter{display:inline-block}
+.continue-word>.letter{display:inline-block}
 
 :root[data-story="immersive"] .story-track{padding:0;max-height:none;min-height:0;overflow:visible;position:relative}
-:root[data-story="immersive"] .hero{height:230svh}
+:root[data-story="immersive"] .hero{height:100svh}
 :root[data-story="immersive"] .editor-section{height:235svh}
 :root[data-story="immersive"] .desktop-section{height:240svh}
 :root[data-story="immersive"] .quick-section{height:205svh}
 :root[data-story="immersive"] .continue-section{height:160svh}
 :root[data-story="immersive"] .scene{position:sticky;top:0;height:100svh;overflow:hidden;isolation:isolate}
-:root[data-story="immersive"] .hero-scene,:root[data-story="immersive"] .quick-scene,:root[data-story="immersive"] .continue-scene{background:var(--ink);color:var(--paper)}
+:root[data-story="immersive"] .hero-scene,:root[data-story="immersive"] .continue-scene{background:var(--ink);color:var(--paper)}
 :root[data-story="immersive"] .editor-scene{background:var(--blue);padding:26px var(--gutter)}
-:root[data-story="immersive"] .desktop-scene{background:var(--paper);color:var(--ink);padding:45px var(--gutter)}
-:root[data-story="immersive"] .hero-masthead{top:8svh;font-size:28.5vw;transform:translate3d(var(--tx,0px),var(--ty,0px),0) scale(1.26,.83);opacity:var(--alpha,1)}
-:root[data-story="immersive"] .hero-interface{left:0;top:0;width:100vw;transform-origin:0 0;transform:translate3d(var(--tx,28vw),var(--ty,25svh),0) rotate(var(--rot,4deg)) scale(var(--scale,1.06))}
-:root[data-story="immersive"] .hero-window{aspect-ratio:2692/1230;border-radius:18px}
-:root[data-story="immersive"] .hero-copy{bottom:115px;width:44%;transform:translateY(var(--ty,0px));opacity:var(--alpha,1)}
-:root[data-story="immersive"] .hero-copy h1{font-size:clamp(44px,5.5vw,96px)}
-:root[data-story="immersive"] .hero-copy>p{max-width:24vw}
+:root[data-story="immersive"] .desktop-scene{background:var(--blue);color:var(--ink);padding:45px var(--gutter)}
+:root[data-story="immersive"] .hero-poster{height:100%}
+:root[data-story="immersive"] .hero-masthead{transform:translate3d(var(--tx,0px),var(--ty,0px),0);opacity:var(--alpha,1)}
+:root[data-story="immersive"] .hero-copy{transform:translateY(var(--ty,0px));opacity:var(--alpha,1)}
 :root[data-story="immersive"] .scroll-tab{bottom:0;height:74px;overflow:hidden}
 :root[data-story="immersive"] .scroll-tab>span,:root[data-story="immersive"] .scroll-tab>.icon{position:relative}
 :root[data-story="immersive"] .scroll-tab>.icon{animation:scroll-cue 1.8s ease-in-out infinite}
@@ -38,11 +35,11 @@
 :root[data-story="immersive"] .physical-laptop{position:absolute;left:0;top:0;bottom:auto;margin:0;width:min(86vw,138svh);transform-origin:0 0;transform:translate3d(var(--tx,30vw),var(--ty,30svh),0) scale(var(--scale,.66)) rotate(var(--rot,-5deg))}
 :root[data-story="immersive"] .platform-strip{bottom:26px;opacity:var(--alpha,1)}
 
-:root[data-story="immersive"] .quick-scene{display:block;padding:50px var(--gutter)}
+:root[data-story="immersive"] .quick-scene{background:var(--blue);color:var(--ink);display:block;padding:50px var(--gutter)}
 :root[data-story="immersive"] .quick-copy{position:absolute;left:var(--gutter);top:23%;width:42%}
 :root[data-story="immersive"] .quick-copy h2 .line-mask{overflow:hidden}
 :root[data-story="immersive"] .quick-copy h2 .line-mask>span{transform:translateY(var(--ty,0px));opacity:var(--alpha,1)}
-:root[data-story="immersive"] .shortcut-key{transform:scale(var(--scale,1));box-shadow:0 0 0 var(--halo,0px) #2b5ffc18}
+:root[data-story="immersive"] .shortcut-key{transform:scale(var(--scale,1));box-shadow:0 0 0 var(--halo,0px) #ffffff18}
 :root[data-story="immersive"] .quick-copy>p{transform:translateY(var(--ty,0px));opacity:var(--alpha,1)}
 :root[data-story="immersive"] .quick-interface{position:absolute;left:0;top:0;width:min(49vw,calc((100svh - 170px)*1.17));margin:0;transform-origin:50% 50%;transform:translate3d(var(--tx,65vw),var(--ty,55svh),0) scale(var(--scale,.55)) rotate(var(--rot,8deg));opacity:var(--alpha,0)}
 
@@ -52,9 +49,9 @@
 :root[data-story="immersive"] .continue-row{margin-top:0;transform:translateY(var(--ty,0px));opacity:var(--alpha,1)}
 :root[data-story="immersive"] .footer-line{margin-top:auto}
 
-:root[data-story="immersive"] .scene .hero-masthead,:root[data-story="immersive"] .scene .hero-interface,:root[data-story="immersive"] .scene .editor-interface,:root[data-story="immersive"] .scene .physical-laptop,:root[data-story="immersive"] .scene .quick-interface{will-change:auto}
-:root[data-story="immersive"] .scene.is-near .hero-masthead,:root[data-story="immersive"] .scene.is-near .hero-interface,:root[data-story="immersive"] .scene.is-near .editor-interface,:root[data-story="immersive"] .scene.is-near .physical-laptop,:root[data-story="immersive"] .scene.is-near .quick-interface{will-change:transform,opacity}
-:root[data-story="immersive"][data-ready="true"] .hero-masthead>span{animation:brand-arrive 1s cubic-bezier(.22,1,.36,1) both;animation-delay:calc(var(--letter-index)*80ms)}
+:root[data-story="immersive"] .scene .hero-masthead,:root[data-story="immersive"] .scene .editor-interface,:root[data-story="immersive"] .scene .physical-laptop,:root[data-story="immersive"] .scene .quick-interface{will-change:auto}
+:root[data-story="immersive"] .scene.is-near .hero-masthead,:root[data-story="immersive"] .scene.is-near .editor-interface,:root[data-story="immersive"] .scene.is-near .physical-laptop,:root[data-story="immersive"] .scene.is-near .quick-interface{will-change:transform,opacity}
+:root[data-story="immersive"][data-ready="true"] .hero-line{animation:brand-arrive 1s cubic-bezier(.22,1,.36,1) both;animation-delay:calc(var(--letter-index)*80ms)}
 :root[data-story="immersive"][data-ready="true"] .hero-copy h1{animation:copy-arrive .85s cubic-bezier(.22,1,.36,1) .25s both}
 :root[data-story="immersive"][data-ready="true"] .hero-copy>p:not(.visually-hidden){animation:copy-arrive .85s cubic-bezier(.22,1,.36,1) .4s both}
 
@@ -62,20 +59,20 @@
 :root[data-story="flow"][data-motion="full"] .editor-interface,:root[data-story="flow"][data-motion="full"] .quick-interface{transform:translate3d(var(--tx,0px),var(--ty,0px),0) rotate(var(--rot,0deg)) scale(var(--scale,1));opacity:var(--alpha,1)}
 :root[data-story="flow"][data-motion="full"] .physical-laptop{transform:translateY(var(--ty,0px)) scale(var(--scale,1));transform-origin:center bottom}
 :root[data-story="flow"][data-motion="full"] .continue-word>.letter{transform:translateY(var(--ty,0%));opacity:var(--alpha,1)}
-:root[data-motion="reduced"] .hero-masthead>span,:root[data-motion="reduced"] .continue-word>.letter{transform:none;opacity:1}
+:root[data-motion="reduced"] .hero-line,:root[data-motion="reduced"] .continue-word>.letter{transform:none;opacity:1}
 
 @media(max-width:760px),(max-width:960px) and (orientation:portrait){
   .quick-scene{grid-template-columns:1fr;gap:0}
-  :root[data-story="immersive"] .hero{height:200svh}
+  :root[data-story="immersive"] .hero{height:100svh}
   :root[data-story="immersive"] .editor-section{height:220svh}
   :root[data-story="immersive"] .desktop-section{height:220svh}
   :root[data-story="immersive"] .quick-section{height:200svh}
   :root[data-story="immersive"] .continue-section{height:150svh}
-  :root[data-story="immersive"] .hero-masthead{top:12svh;font-size:30vw}
-  :root[data-story="immersive"] .hero-interface{width:138vw}
-  :root[data-story="immersive"] .hero-copy{width:calc(100% - 48px);bottom:105px}
-  :root[data-story="immersive"] .hero-copy h1{font-size:clamp(40px,11vw,76px)}
-  :root[data-story="immersive"] .hero-copy>p{max-width:28em}
+  :root[data-story="immersive"] .hero-masthead{top:clamp(125px,16svh,160px);bottom:auto;height:clamp(230px,39svh,350px)}
+  :root[data-story="immersive"] .hero-line-good{width:86%}
+  :root[data-story="immersive"] .hero-line-stay{width:78%;margin-left:22%}
+  :root[data-story="immersive"] .hero-copy{width:calc(100% - 48px);bottom:110px}
+  :root[data-story="immersive"] .hero-copy h1{font-size:clamp(34px,10vw,54px)}
   :root[data-story="immersive"] .scroll-tab{height:64px}
   :root[data-story="immersive"] .editor-scene{padding-top:27px}
   :root[data-story="immersive"] .editor-layout{margin-top:38px;height:calc(100svh - 155px)}
