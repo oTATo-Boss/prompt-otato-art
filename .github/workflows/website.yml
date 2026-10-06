@@ -20,6 +20,8 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v6
+      - name: Validate cumulative download statistics
+        run: node --test packaging/website/worker.test.mjs
       - name: Preserve the latest released update feed
         id: stage
         run: |

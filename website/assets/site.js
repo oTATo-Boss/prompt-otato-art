@@ -236,3 +236,24 @@ document.fonts.ready.then(measure);
 document.querySelectorAll('img').forEach(img => { if (!img.complete) img.addEventListener('load', measure, { once: true }); });
 applyMotion();
 requestAnimationFrame(() => { root.dataset.ready = 'true'; });
+
+
+async function loadDownloadStats() {
+  const count = document.querySelector('[data-download-total]');
+  if (!count) return;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const response = await fetch('/api/downloads', { signal: AbortSignal.timeout(12000) });
+      if (!response.ok) throw new Error('Statistics unavailable');
+      const data = await response.json();
+      if (!Number.isSafeInteger(data.total) || data.total < 0) throw new Error('Invalid statistics');
+      count.textContent = new Intl.NumberFormat('zh-CN').format(data.total);
+      if (data.stale) document.querySelector('.download-stats-note').textContent = '所有版本累计 · 最近统计';
+      return;
+    } catch {
+      if (attempt === 0) await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  }
+  document.querySelector('[data-download-stats]').textContent = '下载统计暂时不可用';
+}
+loadDownloadStats();

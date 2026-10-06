@@ -119,3 +119,5 @@ button:focus-visible,a:focus-visible,textarea:focus-visible{outline:3px solid cu
 @media(max-height:619px) and (max-width:760px){
   .hero-poster{height:max(540px,100svh)}.hero-masthead{top:115px;height:210px}.hero-copy{bottom:86px}
 }
+
+.download-stats{margin-top:16px;font-size:13px;line-height:1.7;color:#b9b8b1}.download-stats strong{font-size:20px;font-weight:650;color:var(--paper);font-variant-numeric:tabular-nums}.download-stats-note{display:block;font-size:11px;color:#b9b8b1}
