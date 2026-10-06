@@ -1,20 +1,33 @@
 # oTATo prompt
 
-oTATo prompt 是简体中文 macOS 提示词资料库。提示词和封面保存在本机，使用时无需账号；主窗口、菜单栏和全局搜索浮层可查找并复制提示词。
+免费的 macOS 本地提示词资料库。按 ⌥ Space 随时唤出，搜索标题或标签，回车即复制。
 
-## 当前交付
+![oTATo prompt 资料库](website/assets/product-library.webp)
+
+**[下载 macOS 版](https://prompt.otato.art/)** · [GitHub Releases](https://github.com/susu177990-rgb/otato-prompt/releases/latest) · [安装与使用说明](https://prompt.otato.art/help)
+
+- 免费，无需账号；提示词和封面只保存在本机。
+- ⌥ Space 全局快速搜索，回车复制；也可从菜单栏复制。
+- 网格与列表视图，文件夹、标签、封面、收藏及多条件筛选。
+- Markdown 正文；批量导入 `.md` / `.txt`；完整资料库备份与恢复。
+- 正式版提供版本更新提示，可在设置中关闭自动检查。
+- 支持 macOS 14 及以上，包含 Apple Silicon 与 Intel 架构。
+
+## 安装
+
+当前公开版本为 1.0，尚未经过 Apple 公证。最新构建以 [Releases](https://github.com/susu177990-rgb/otato-prompt/releases/latest) 为准。
+
+1. 从[官网](https://prompt.otato.art/)下载 ZIP 并解压，得到 `oTATo-prompt.dmg` 和「安装说明.pdf」。
+2. 打开 DMG，将 **oTATo Prompt.app** 拖到“应用程序”。
+3. 从“应用程序”启动。若 macOS 因未公证而阻止打开，先尝试启动一次，再到“系统设置 → 隐私与安全性”选择“仍要打开”。只对从官网或本仓库 Releases 下载的安装包执行此操作。
+4. 首次启动的资料库为空。可新建 Prompt，或从应用内导入 UTF-8 编码的 `.md` / `.txt` 文件。
+
+## 工程信息
 
 - Xcode 工程：`oTATo Prompt.xcodeproj`。最低系统版本为 macOS 14，Bundle ID 为 `art.otato.prompt`。
-- 最新本地测试磁盘映像：`dist/oTATo-prompt-1.0-build5-test-20261004-universal.dmg`，版本 1.0（构建 5），包含 Apple Silicon 与 Intel 两种架构。该目录不纳入源码仓库。
-- 测试版以临时签名制作，尚未经过 Developer ID 签名和 Apple 公证。它用于本地验收，不是正式发行版。
+- 发行包由 GitHub Actions 自动构建并发布到 Releases 与官网，标签格式为 `v<版本>-build<构建号>`；`dist/` 不纳入源码仓库。
 
-## 安装和试用测试版
-
-以下步骤适用于本地交付的测试包；GitHub 源码仓库不包含该 DMG。
-
-1. 打开 `dist/` 中的测试 DMG，将 **oTATo Prompt.app** 拖到“应用程序”。
-2. 从“应用程序”启动。若 macOS 因未公证而阻止打开，先尝试启动一次，再到“系统设置 → 隐私与安全性”选择“仍要打开”。只对确认来自本工程的测试产物执行此操作。
-3. 首次启动的资料库为空。可新建 Prompt，或从应用内导入 UTF-8 编码的 `.md` / `.txt` 文件。
+## 功能说明
 
 DMG 使用 oTATo 蓝与可爱的提示词卡片背景，左侧为 App，右侧为“应用程序”入口。图标可直接拖动安装；背景包含普通与 Retina 两种分辨率。
 
@@ -82,14 +95,14 @@ sips -z 512 768 packaging/dmg/background@2x.png --out packaging/dmg/background.p
 
 更换 App 路径、版本和日期即可沿用该安装界面。插画由 imagegen 按已确认的预览制作，白色线条 Logo 使用 App 的原始透明 PNG 等比合成；原生 App 图标及应用程序文件夹由 Finder 展示。
 
-## 正式发布前
+## 发行状态
 
-当前机器只验证了 macOS 26.6。发行还需验证真实安装、快捷键、窗口与 Sparkle 升级行为。用户已接受先准备未公证发行版：使用启用更新器的 Release 构建、ad hoc 代码签名与 EdDSA 更新包签名，并在官网下载 ZIP 中提供与 DMG 并列的「安装说明.pdf」。现有含 DEBUG 的本地测试包不直接作为发行包。
+已公开发行未公证版本：使用启用更新器的 Release 构建、ad hoc 代码签名与 EdDSA 更新包签名，官网下载 ZIP 内提供与 DMG 并列的「安装说明.pdf」。
 
-核心数据流程已通过 macOS 14、15、26 的云端检查，包括跨进程重开和完整归档恢复；这不包含真实窗口、快捷键或签名升级验收。已修复 macOS 14 恢复带标签归档时的崩溃。
+核心数据流程已通过 macOS 14、15、26 的云端检查，包括跨进程重开和完整归档恢复；这不包含真实窗口、快捷键或签名升级验收。已修复 macOS 14 恢复带标签归档时的崩溃。真实安装与升级验收记录见[发行指南](docs/release-guide.md)。
 
 ## 正式发行流程
 
-官网与软件的发布配置均在本项目内维护。源码候选为 1.0（build 6）；官网入口直接指向最新 ZIP，内含 DMG 和独立的安装说明 PDF；应用内更新继续使用签名 DMG。正式版默认每小时检查新版本并显示安装提示，可在设置中关闭；开发构建不会启动更新器。
+官网与软件的发布配置均在本项目内维护。最新版本以 GitHub Releases 的最新标签为准；官网入口直接指向最新 ZIP，内含 DMG 和独立的安装说明 PDF；应用内更新继续使用签名 DMG。正式版默认每小时检查新版本并显示安装提示，可在设置中关闭；开发构建不会启动更新器。
 
-完整配置与验收状态见 [发行指南](docs/release-guide.md)。未公证发行路径不要求 Apple 开发者会员；自动部署仍需要 Cloudflare API Token，真实安装和更新验收仍在进行。日后可以切换到 Developer ID 签名公证发行。
+完整配置与验收状态见 [发行指南](docs/release-guide.md)。未公证发行路径不要求 Apple 开发者会员；自动部署需要 Cloudflare API Token（已配置）。日后可以切换到 Developer ID 签名公证发行。
