@@ -22,9 +22,9 @@
 
 <br>
 
-[![观看 oTATo prompt 发布片](docs/assets/launch-poster.webp)](https://github.com/susu177990-rgb/otato-prompt/releases/download/v1.0-build9/otato-prompt-launch-1080p.mp4)
+https://github.com/user-attachments/assets/1e34b7b8-efbd-4014-85c2-768e05a6aa01
 
-<div align="center"><sub><b><a href="https://github.com/susu177990-rgb/otato-prompt/releases/download/v1.0-build9/otato-prompt-launch-1080p.mp4">▶ 点击观看发布片</a></b> · 24 秒 · 1080p · 含声音</sub></div>
+<div align="center"><sub>发布片 · 24 秒 · 含声音 · <a href="https://github.com/susu177990-rgb/otato-prompt/releases/download/v1.0-build9/otato-prompt-launch-1080p.mp4">下载 1080p 原片</a></sub></div>
 
 <br>
 
@@ -63,7 +63,17 @@ oTATo prompt 把这些散落的好词收进一个地方——**只在你自己�
 </tr>
 </table>
 
+![⌥ Space 快速搜索浮层](docs/assets/launch-poster.webp)
+
+<div align="center"><sub>快速搜索浮层 · 输入关键词，<kbd>Enter</kbd> 直接复制</sub></div>
+
+<br>
+
 ![资料库网格视图](docs/assets/library-grid.webp)
+
+<div align="center"><sub>资料库网格视图 · 文件夹、标签、封面、收藏与多条件筛选</sub></div>
+
+<br>
 
 | | |
 |---|---|
