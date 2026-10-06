@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import xml.etree.ElementTree as ET
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 REPO = "susu177990-rgb/otato-prompt"
@@ -133,6 +134,40 @@ def next_build():
     print(max([int(configured.group(1)), *[n + 1 for n in numbers]]))
 
 
+def validate_dmg_contents(dmg):
+    with tempfile.TemporaryDirectory(prefix="otato-dmg-") as temporary:
+        mount = Path(temporary) / "mount"
+        mount.mkdir()
+        run(["hdiutil", "attach", "-readonly", "-nobrowse", "-mountpoint", mount, dmg])
+        try:
+            if not (mount / "oTATo Prompt.app").is_dir():
+                raise RuntimeError("The DMG must contain the application.")
+            applications = mount / "应用程序"
+            if not applications.is_symlink() or os.readlink(applications) != "/Applications":
+                raise RuntimeError("The DMG must contain the Applications shortcut.")
+            if list(mount.glob("*.pdf")):
+                raise RuntimeError("Installation PDFs belong outside the DMG, in the download ZIP.")
+        finally:
+            run(["hdiutil", "detach", mount])
+
+
+def file_checksum(path):
+    with path.open("rb") as handle:
+        return hashlib.file_digest(handle, "sha256").hexdigest()
+
+
+def package_download(dmg, guide, output):
+    if not guide.is_file():
+        raise RuntimeError("The offline installation guide is missing.")
+    download = output / "oTATo-prompt.zip"
+    # Create this after the appcast: Sparkle updates use the signed DMG,
+    # while the website ZIP lets people read the guide before opening it.
+    with zipfile.ZipFile(download, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.write(dmg, dmg.name)
+        archive.write(guide, guide.name)
+    return download
+
+
 def build_release(args):
     notarized = args.distribution == "developer-id"
     identity, team = "-", None
@@ -211,6 +246,7 @@ def build_release(args):
     if notarized:
         run(["spctl", "--assess", "--type", "open", "--context", "context:primary-signature", dmg])
     run(["hdiutil", "verify", dmg])
+    validate_dmg_contents(dmg)
     notes = Path(args.notes).resolve()
     if not notes.is_file() or not notes.read_text().strip():
         raise RuntimeError("Provide release notes with --notes.")
@@ -228,14 +264,18 @@ def build_release(args):
         raise RuntimeError("The update feed size does not match the final installer.")
     run([tools / "sign_update", "--ed-key-file", "-", "--verify", dmg,
          enclosure.get(ns + "edSignature")], stdin=seed)
-    with dmg.open("rb") as handle:
-        checksum = hashlib.file_digest(handle, "sha256").hexdigest()
+    guide = ROOT / "packaging/dmg/安装说明.pdf"
+    download = package_download(dmg, guide, output)
+    checksum = file_checksum(dmg)
     (output / "release.json").write_text(json.dumps({
         "tag": args.tag, "version": args.version, "build": args.build,
         "commit": run(["git", "rev-parse", "HEAD"], capture=True),
         "team": team, "distribution": args.distribution, "notarized": notarized,
         "installation_guide": "安装说明.pdf", "dmg": dmg.name, "appcast": feed.name,
         "sha256": checksum,
+        "download": download.name, "download_sha256": file_checksum(download),
+        "download_size": download.stat().st_size,
+        "installation_guide_sha256": file_checksum(guide),
     }, indent=2) + "\n")
     print(f"Verified {args.distribution} release: {output}")
 

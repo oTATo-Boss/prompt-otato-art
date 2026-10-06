@@ -22,7 +22,7 @@ python3 -m http.server 4173 --bind 127.0.0.1 --directory website
 
 每个章节在视口内停留，原生滚动控制窗口展开、文字错序入场、实体电脑镜头推进、搜索浮层弹出和结尾字母揭示。时间轴由 CSS sticky 与 requestAnimationFrame 实现，不接管滚轮；停止滚动后停止动画计算。章节导航和键盘焦点可直接到达可阅读的画面。
 
-所有软件截图为纯展示；已移除使用指南、复制体验和截图放大的全部弹窗。顶部导航加入 GitHub 仓库链接，顶部右侧、首屏右侧与末屏蓝色按钮均为下载入口，统一指向 `https://github.com/susu177990-rgb/otato-prompt/releases/latest/download/oTATo-prompt.dmg`。正式包由签名公证流程发布，三个带 `data-download` 的链接会直接下载同一个最新 DMG。
+所有软件截图为纯展示；已移除使用指南、复制体验和截图放大的全部弹窗。顶部导航加入 GitHub 仓库链接，顶部右侧、首屏右侧与末屏蓝色按钮均为下载入口，统一指向 `https://github.com/susu177990-rgb/otato-prompt/releases/latest/download/oTATo-prompt.zip`。正式包由签名公证流程发布，三个带 `data-download` 的链接会直接下载同一个最新 ZIP，内含 DMG 和独立的安装说明 PDF。应用内更新继续使用签名 DMG。
 
 导航、电脑章节和末屏明确说明「仅支持 macOS 14+」。
 

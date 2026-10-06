@@ -21,16 +21,26 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Preserve the latest released update feed
+        id: stage
         run: |
           mkdir -p .build/published
           TAG=$(gh release list --repo susu177990-rgb/otato-prompt --limit 1 --exclude-drafts --exclude-pre-releases --json tagName --jq '.[0].tagName // empty')
           if [ -n "$TAG" ]; then
             gh release download "$TAG" --repo susu177990-rgb/otato-prompt --pattern appcast.xml --dir .build/published
-            python3 scripts/prepare_website.py --appcast .build/published/appcast.xml
+            gh release download "$TAG" --repo susu177990-rgb/otato-prompt --pattern release.json --dir .build/published
+            FORMAT=$(python3 -c 'import json; print(json.load(open(".build/published/release.json")).get("download", ""))')
+            if [ "$FORMAT" = "oTATo-prompt.zip" ]; then
+              python3 scripts/prepare_website.py --appcast .build/published/appcast.xml
+              echo 'ready=true' >> "$GITHUB_OUTPUT"
+            else
+              echo 'Keeping the current website until the first ZIP release is published.'
+            fi
           else
             python3 scripts/prepare_website.py --preview
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
           fi
       - uses: cloudflare/wrangler-action@v4
+        if: steps.stage.outputs.ready == 'true'
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           wranglerVersion: '4.147.0'

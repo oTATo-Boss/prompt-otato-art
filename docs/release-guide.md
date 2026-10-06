@@ -5,7 +5,7 @@
 
 ## 当前发行方式
 
-2026-10-05：用户确认暂时无法加入 Apple Developer Program，接受先准备**未公证发行版**。官网下载包将明确注明未公证；首次安装按 DMG 内的「安装说明.pdf」执行系统的「仍要打开」步骤。
+2026-10-05：用户确认暂时无法加入 Apple Developer Program，接受先准备**未公证发行版**。官网下载包将明确注明未公证；首次安装先解压官网 ZIP，再按与 DMG 同目录的「安装说明.pdf」执行系统的「仍要打开」步骤。
 
 未公证路径显式使用 `--distribution unnotarized`。它构建无 `DEBUG` 的 Universal Release，保留 App Sandbox，逐层为 Sparkle 组件和 App 做 ad hoc 签名，再为完整 DMG 生成 EdDSA 更新签名。主程序与 Sparkle 组件不启用 Hardened Runtime，以支持没有 Developer ID 的加载方式。发行记录明确注明没有 Apple 公证。
 
@@ -15,9 +15,9 @@ Developer ID 路径保留为 `--distribution developer-id`，且是命令行默�
 
 已公开发布 1.0（build 6）。核心数据逻辑已经通过 macOS 14、15、26 的云端检查：[检查记录](https://github.com/susu177990-rgb/otato-prompt/actions/runs/37215265212)。覆盖保存、跨进程重开、中文与 Markdown 保留、标签与嵌套文件夹、封面、批量导入回滚、唯一文件名导出、废纸篓及完整备份恢复。检查中已修复 macOS 14 恢复带标签归档时的崩溃，v1 模型保持不变。
 
-已生成 1.0（build 6）的未公证 Universal Release DMG，验证了 ad hoc 代码签名、完整包 EdDSA 更新签名、DMG 完整性与 SHA-256。挂载后确认包含 App、应用程序入口和「安装说明.pdf」，PDF 与打包源文件一致，嵌入中文字体且已检查排版。安装说明会随今后的 DMG 自动打包。
+已生成 1.0（build 6）的未公证 Universal Release DMG，验证了 ad hoc 代码签名、完整包 EdDSA 更新签名、DMG 完整性与 SHA-256。挂载后确认包含 App、应用程序入口和「安装说明.pdf」，PDF 与打包源文件一致，嵌入中文字体且已检查排版。这是旧版布局；自 2026-10-06 起，安装说明放在官网下载 ZIP 中，与 DMG 并列，DMG 内只保留 App 和应用程序入口。
 
-已在独立沙盒资料库验证实际升级：自动检查回调发现 build 6（非手动触发），下载、EdDSA 校验、替换并重启成功；随后用生产界面手动检查 build 7，显示更新说明，通过包含教程的 DMG 完成安装并重启。两次升级均保留正文、中文与 Unicode、标签、收藏、文件夹及封面字节；生产界面可见保留的记录。测试 App 安装在 `/Applications`，使用独立 Bundle ID，不访问用户正式资料库。官网三个按钮已启用并指向最新 DMG，浏览器实际下载、公开完整包 SHA-256 及线上签名更新清单一致性检查通过。
+已在独立沙盒资料库验证实际升级：自动检查回调发现 build 6（非手动触发），下载、EdDSA 校验、替换并重启成功；随后用生产界面手动检查 build 7，显示更新说明，通过包含教程的 DMG 完成安装并重启。两次升级均保留正文、中文与 Unicode、标签、收藏、文件夹及封面字节；生产界面可见保留的记录。测试 App 安装在 `/Applications`，使用独立 Bundle ID，不访问用户正式资料库。旧版官网三个按钮已启用并指向最新 DMG，浏览器实际下载、公开完整包 SHA-256 及线上签名更新清单一致性检查通过。
 
 发布配置已合并至 `main`。软件改动推送或合并到 `main` 会触发自动发布。
 
@@ -50,21 +50,21 @@ python3 -m venv .build/release-env
   --version 1.0 --build 6 --tag v1.0-build6 --notes docs/release-notes.md
 ```
 
-产物为 `dist/releases/v1.0-build6/` 中的 DMG、签名更新清单与 SHA-256 发行记录。DMG 包含 App、应用程序入口和可离线阅读的中文 PDF 教程。PDF 已预生成并保存在 `packaging/dmg/安装说明.pdf`；重新生成使用 `scripts/build_install_guide.py --font <Noto Sans SC 静态 TTF>`，需要 reportlab。
+产物为 `dist/releases/v1.0-build6/` 中的 ZIP、DMG、签名更新清单与 SHA-256 发行记录。官网下载 ZIP 包含 `oTATo-prompt.dmg` 和「安装说明.pdf」两个并列文件，解压后即可先阅读教程。DMG 只包含 App 和应用程序入口。PDF 已预生成并保存在 `packaging/dmg/安装说明.pdf`；重新生成使用 `scripts/build_install_guide.py --font <Noto Sans SC 静态 TTF>`，需要 reportlab。
 
 ## 自动发布行为
 
 - 软件改动推送到 `main`，或手动运行 Publish macOS release workflow。
 - 先在 macOS 14、15、26 的 runner 检查核心数据流程，再构建所选发行方式。
 - 从现有发行标签和 Xcode 配置分配递增 build；对外版本号来自 `MARKETING_VERSION`。
-- GitHub Release 标签为 `v<version>-build<build>`，DMG 固定名 `oTATo-prompt.dmg`。官网下载按钮直达 `releases/latest/download/oTATo-prompt.dmg`。
+- GitHub Release 标签为 `v<version>-build<build>`，DMG 固定名 `oTATo-prompt.dmg`。官网下载 ZIP 固定名 `oTATo-prompt.zip`，按钮直达 `releases/latest/download/oTATo-prompt.zip`。
 - Sparkle appcast 的下载链接指向固定版本 DMG，签名覆盖整个安装包。自动检查默认每小时一次，由用户选择安装，开发构建不启动更新器。
 - 官网与 appcast 同步部署到 Cloudflare；仅网站变更会保留最新发行清单。未公证发行说明明确标注安装步骤。
-- 公开验证会检查三个直达下载按钮、线上清单、完整下载字节和 SHA-256。
+- 公开验证会检查三个 ZIP 下载按钮、ZIP 内的独立 PDF、线上清单，以及 ZIP 和更新 DMG 的完整字节与 SHA-256。网站单独部署在首次 ZIP 发布前保留旧站，避免提前放出不存在的下载链接。
 
 ## 首次发行验收
 
-1. 从官网实际下载并打开 DMG，检查教程可离线阅读，App 能拖入应用程序。
+1. 从官网实际下载 ZIP，解压后先阅读 PDF，再打开 DMG；确认 DMG 内没有 PDF，App 能拖入应用程序。
 2. 用系统的「仍要打开」允许首次运行，不关闭全局 Gatekeeper。
 3. 在可用的 Mac 上验证窗口、设置、菜单栏、快捷键和复制；macOS 14/15 的云端数据检查不等于其 GUI 验收。
 4. 从旧的启用更新器的构建实测升级，验证提示、签名、安装替换、重启、数据和封面保留。

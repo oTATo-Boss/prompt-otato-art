@@ -2,7 +2,7 @@
 
 免费的 macOS 本地提示词资料库。
 
-当前发行包尚未经 Apple 公证。首次安装请先将 App 拖入“应用程序”，再按 DMG 内的“安装说明.pdf”允许打开。在线步骤：https://prompt.otato.art/help
+当前发行包尚未经 Apple 公证。首次安装请解压官网下载的 ZIP，先阅读与 DMG 同目录的“安装说明.pdf”，再按教程打开 DMG、将 App 拖入“应用程序”并允许首次运行。在线步骤：https://prompt.otato.art/help
 
 - 网格与列表管理，文件夹、标签、收藏及多条件筛选。
 - Markdown 编辑，UTF-8 文本导入导出，完整资料库备份与恢复。
