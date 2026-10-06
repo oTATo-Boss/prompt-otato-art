@@ -4,14 +4,14 @@ const mobile = matchMedia('(max-width: 760px), (max-width: 960px) and (orientati
 const compact = matchMedia('(max-height: 619px)');
 const sections = {
   hero: document.querySelector('.hero'),
-  editor: document.querySelector('.editor-section'),
   desktop: document.querySelector('.desktop-section'),
+  editor: document.querySelector('.editor-section'),
   quick: document.querySelector('.quick-section'),
   ending: document.querySelector('.continue-section')
 };
 const parts = {
   masthead: document.querySelector('.hero-masthead'),
-  hero: document.querySelector('.hero-interface'),
+  heroLines: [...document.querySelectorAll('.hero-line')],
   heroCopy: document.querySelector('.hero-copy'),
   words: [...document.querySelectorAll('.display-stack span')],
   editor: document.querySelector('.editor-interface'),
@@ -51,6 +51,25 @@ function set(element, properties) {
   values.set(element, previous);
 }
 const px = value => Math.round(value * 10) / 10 + 'px';
+const typeMeasure = document.createElement('canvas').getContext('2d');
+function fitHeroType() {
+  for (const line of parts.heroLines) {
+    const word = line.querySelector('.hero-word');
+    const style = getComputedStyle(word);
+    const size = parseFloat(style.fontSize);
+    typeMeasure.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+    const bounds = typeMeasure.measureText(word.textContent);
+    const tracking = parseFloat(style.letterSpacing) || 0;
+    const width = bounds.actualBoundingBoxLeft + bounds.actualBoundingBoxRight + tracking * (word.textContent.length - 1);
+    const height = bounds.actualBoundingBoxAscent + bounds.actualBoundingBoxDescent;
+    const sx = line.clientWidth / width;
+    const sy = (line.clientHeight - 5) / height;
+    const ascent = bounds.fontBoundingBoxAscent ?? size * .88;
+    const descent = bounds.fontBoundingBoxDescent ?? size * .12;
+    const baseline = (size - ascent - descent) / 2 + ascent;
+    set(word, { 'fit-x': sx, 'fit-y': sy, 'ink-x': px(bounds.actualBoundingBoxLeft * sx), 'ink-y': px((bounds.actualBoundingBoxAscent - baseline) * sy) });
+  }
+}
 function measure() {
   for (const [name, element] of Object.entries(sections)) {
     const bounds = element.getBoundingClientRect();
@@ -59,6 +78,7 @@ function measure() {
   metrics.laptopWidth = parts.laptop.offsetWidth;
   metrics.laptopHeight = parts.laptop.offsetHeight;
   metrics.gutter = parseFloat(getComputedStyle(parts.editor.closest('.scene')).paddingLeft) || 0;
+  fitHeroType();
   requestFrame();
 }
 function locate() {
@@ -76,7 +96,6 @@ function render() {
   const h = innerHeight;
   const small = mobile.matches;
   const pinned = isImmersive();
-  const progress = name => clamp((renderedScroll - metrics[name].top) / metrics[name].run);
   const entering = name => clamp((renderedScroll + h * .75 - metrics[name].top) / (metrics[name].run + h * .75));
   const flowing = name => phase((renderedScroll + h - metrics[name].top) / (h + metrics[name].height), .1, .65);
   for (const [name, section] of Object.entries(sections)) {
@@ -95,17 +114,10 @@ function render() {
       set(letter, { ty: (1 - t) * 125 + '%', alpha: t });
     });
   } else {
-    const hero = progress('hero');
-    const settle = phase(hero, .08, .65);
-    const zoom = phase(hero, .72, 1);
-    set(parts.masthead, { tx: px(-w * .15 * settle), ty: px(-h * .28 * settle), alpha: 1 - phase(hero, .15, .65) });
-    set(parts.hero, {
-      tx: px(small ? mix(w * .06, -w * .33, settle) - w * .05 * zoom : mix(w * .34, w * .035, settle) - w * .10 * zoom),
-      ty: px(small ? mix(h * .28, h * .29, settle) - h * .035 * zoom : mix(h * .25, h * .19, settle) - h * .15 * zoom),
-      rot: mix(small ? 4 : 5, 0, settle) + 'deg',
-      scale: small ? mix(1, 1.18, settle) : mix(1.03, .92, settle) + .2 * zoom
-    });
-    set(parts.heroCopy, { ty: px(-h * .12 * phase(hero, .03, .3)), alpha: 1 - phase(hero, .07, .27) });
+    const hero = clamp((renderedScroll - metrics.hero.top) / h);
+    const exit = phase(hero, .05, .9);
+    set(parts.masthead, { tx: '0px', ty: px(-h * .08 * exit), alpha: 1 - phase(hero, .35, 1) });
+    set(parts.heroCopy, { ty: px(-h * .04 * exit), alpha: 1 - phase(hero, .35, 1) });
 
     const editor = entering('editor');
     parts.words.forEach((word, index) => {
@@ -125,13 +137,13 @@ function render() {
     set(parts.editorCaption, { ty: px((1 - caption) * 25), alpha: caption });
 
     const desktop = entering('desktop');
-    const camera = phase(desktop, .2, .94);
+    const camera = phase(desktop, small ? .38 : .2, .94);
     const bw = metrics.laptopWidth;
     const bh = metrics.laptopHeight;
     const finalScale = small ? 2.1 : Math.min(w * .94 / (bw * .7023), h * .88 / (bh * .6251));
     const finalX = (w - bw * .7023 * finalScale) / 2 - bw * .1492 * finalScale;
     const finalY = (h - bh * .6251 * finalScale) / 2 - bh * .1197 * finalScale;
-    set(parts.laptop, { tx: px(mix(small ? -w * .09 : w * .32, finalX, camera)), ty: px(mix(small ? h * .34 : h * .30, finalY, camera)), scale: mix(small ? .88 : .66, finalScale, camera), rot: mix(small ? -3 : -5, 0, camera) + 'deg' });
+    set(parts.laptop, { tx: px(mix(small ? -w * .02 : w * .32, finalX, camera)), ty: px(mix(small ? h * .34 : h * .30, finalY, camera)), scale: mix(small ? .88 : .66, finalScale, camera), rot: mix(small ? -3 : -5, 0, camera) + 'deg' });
     const desktopOut = phase(desktop, .38, .65);
     parts.desktopIndex.inert = desktopOut > .98;
     set(parts.desktopCopy, { ty: px(-100 * desktopOut), alpha: 1 - desktopOut });
