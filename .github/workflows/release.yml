@@ -97,7 +97,7 @@ jobs:
           from pathlib import Path
           if os.environ['RELEASE_DISTRIBUTION'] == 'unnotarized':
               notes = Path('.build/release-notes.md')
-              notes.write_text('当前版本尚未经 Apple 公证。首次安装请先将 App 拖入应用程序，再按 DMG 内的「安装说明.pdf」允许打开。在线说明：https://prompt.otato.art/help\n\n' + notes.read_text())
+              notes.write_text('当前版本尚未经 Apple 公证。首次安装请先解压官网下载的 ZIP，阅读与 DMG 同目录的「安装说明.pdf」，再按教程打开 DMG 和安装 App。在线说明：https://prompt.otato.art/help\n\n' + notes.read_text())
           PY
       - name: Build and verify the selected Universal distribution
         env:
@@ -112,7 +112,7 @@ jobs:
           RELEASE_VERSION: ${{ steps.metadata.outputs.version }}
           RELEASE_BUILD: ${{ steps.metadata.outputs.build }}
         run: |
-          gh release create "$RELEASE_TAG" "dist/releases/$RELEASE_TAG/oTATo-prompt.dmg" "dist/releases/$RELEASE_TAG/appcast.xml" "dist/releases/$RELEASE_TAG/release.json" --target "$GITHUB_SHA" --title "oTATo prompt $RELEASE_VERSION（构建 $RELEASE_BUILD）" --notes-file .build/release-notes.md --latest
+          gh release create "$RELEASE_TAG" "dist/releases/$RELEASE_TAG/oTATo-prompt.zip" "dist/releases/$RELEASE_TAG/oTATo-prompt.dmg" "dist/releases/$RELEASE_TAG/appcast.xml" "dist/releases/$RELEASE_TAG/release.json" --target "$GITHUB_SHA" --title "oTATo prompt $RELEASE_VERSION（构建 $RELEASE_BUILD）" --notes-file .build/release-notes.md --latest
           python3 scripts/prepare_website.py --appcast "dist/releases/$RELEASE_TAG/appcast.xml"
       - name: Publish website and update feed together
         uses: cloudflare/wrangler-action@v4

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create the Chinese offline installation guide included in every DMG."""
+"""Create the Chinese offline installation guide shipped alongside the DMG in the download ZIP."""
 from pathlib import Path
 import argparse
 
@@ -61,19 +61,19 @@ def step(number, title, body, top):
     return top + 28 + height + 22
 
 
-top = step(1, "拖入“应用程序”",
-           "打开 DMG，把 oTATo Prompt.app 拖到右侧“应用程序”文件夹。安装完成后，从“应用程序”中运行软件，不要直接在 DMG 里运行。", 244)
-top = step(2, "先尝试打开一次",
-           "在“应用程序”中双击 oTATo Prompt。若被阻止打开，先点“完成”关闭提醒，再继续下一步。", top)
-top = step(3, "在系统设置中允许打开",
-           "打开“系统设置 → 隐私与安全性”，向下找到“安全性”。找到关于 oTATo Prompt 的提醒，点“仍要打开”。", top)
-top = step(4, "确认后启动",
-           "按系统提示验证密码或 Touch ID；再次出现确认窗口时，点“打开”。同一版本在这台 Mac 上被允许后，日常使用可以正常启动。", top)
+top = step(1, "先解压 ZIP，阅读本教程",
+           "官网下载的是 ZIP。双击解压后，可直接打开“安装说明.pdf”；无需先打开 DMG。确认来源后，再双击 oTATo-prompt.dmg。", 244)
+top = step(2, "DMG 被阻止打开时",
+           "先关闭提醒，打开“系统设置 → 隐私与安全性”，向下找到“安全性”。核对被阻止的文件名，点“仍要打开”，再按提示验证并点“打开”。未被阻止可直接继续。", top)
+top = step(3, "拖入“应用程序”",
+           "打开 DMG 后，把 oTATo Prompt.app 拖到右侧“应用程序”文件夹。复制完成后，从“应用程序”中运行软件，不要直接在 DMG 里运行。", top)
+top = step(4, "首次启动软件",
+           "从“应用程序”双击 oTATo Prompt。若 App 也被阻止，先关闭提醒，再按第 2 步为这个 App 允许打开。同一版本被允许后，日常使用可正常启动。", top)
 
 pdf.setStrokeColor(colors.HexColor("#D9E2EF"))
 pdf.line(42, HEIGHT - top, WIDTH - 42, HEIGHT - top)
 text("没有看到“仍要打开”？", 42, top + 12, WIDTH - 84, size=13)
-text("先确认 App 已复制到“应用程序”，并且已经尝试打开。受公司或学校管理的 Mac 可能限制此操作，请联系管理员。遇到“App 已损坏”或“将损坏电脑”的提醒时，请停止安装，重新从官网下载并反馈问题。",
+text("先尝试打开被阻止的 DMG 或 App，再查看系统设置；App 应先复制到“应用程序”。受管理的 Mac 可能限制此操作。遇到“已损坏”或“将损坏电脑”的提醒时，请停止安装，重新从官网下载并反馈。",
      42, top + 36, WIDTH - 84, size=10.5, color=MUTED)
 
 text('官网与在线说明：<link href="https://prompt.otato.art/help" color="#246BFF">prompt.otato.art/help</link>',
