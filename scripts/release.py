@@ -87,6 +87,7 @@ def validate_app(app, version, build, distribution):
     info = plist(app / "Contents/Info.plist")
     expected = {"CFBundleIdentifier": "art.otato.prompt",
                 "CFBundleShortVersionString": version, "CFBundleVersion": str(build),
+                "LSUIElement": True,
                 "SUFeedURL": SITE + "/updates/appcast.xml",
                 "SUEnableAutomaticChecks": True, "SUScheduledCheckInterval": 3600,
                 "SUAutomaticallyUpdate": False, "SUVerifyUpdateBeforeExtraction": True}

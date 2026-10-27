@@ -555,6 +555,20 @@ struct ContentView: View {
                         .accessibilityHidden(true)
                     Text("oTATo prompt").font(.system(size: 15, weight: .semibold))
                     Spacer()
+                    if !app.dockIconEnabled {
+                        Menu {
+                            SettingsLink { Text("设置…") }
+                            Divider()
+                            Button("退出 oTATo prompt") { NSApp.terminate(nil) }
+                                .keyboardShortcut("q", modifiers: .command)
+                        } label: {
+                            Label("应用选项", systemImage: "gearshape")
+                                .labelStyle(.iconOnly)
+                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                        .help("设置与退出")
+                    }
                 }
                 .padding(.horizontal, 15).frame(height: 44)
             }

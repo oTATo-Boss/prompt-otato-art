@@ -196,6 +196,14 @@ struct AppSettingsView: View {
                     .toggleStyle(.switch)
                     .help("关闭后不在菜单栏驻留")
             }
+            Divider().padding(.leading, 35)
+            settingsRow("Dock 栏显示", symbol: "dock.rectangle",
+                        subtitle: "在 Dock 栏中显示应用图标") {
+                Toggle("Dock 栏显示", isOn: $app.dockIconEnabled)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .help("立即生效，并在下次启动时保留")
+            }
             if let loginFeedback {
                 Text(loginFeedback)
                     .font(.caption)

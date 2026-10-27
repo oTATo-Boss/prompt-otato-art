@@ -70,6 +70,27 @@
     "⌘ F 搜索" : {
 
     },
+    "Dock 栏显示" : {
+      "extractionState" : "manual"
+    },
+    "在 Dock 栏中显示应用图标" : {
+      "extractionState" : "manual"
+    },
+    "立即生效，并在下次启动时保留" : {
+      "extractionState" : "manual"
+    },
+    "应用选项" : {
+      "extractionState" : "manual"
+    },
+    "设置…" : {
+      "extractionState" : "manual"
+    },
+    "设置与退出" : {
+      "extractionState" : "manual"
+    },
+    "退出 oTATo prompt" : {
+      "extractionState" : "manual"
+    },
     "oTATo prompt" : {
 
     },

@@ -171,6 +171,10 @@ final class MainWindowRetentionDelegate: NSObject, NSWindowDelegate {
 final class AppLifetimeDelegate: NSObject, NSApplicationDelegate {
     weak var coordinator: AppCoordinator?
 
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        coordinator?.applyDockIconVisibility()
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

@@ -40,6 +40,13 @@ final class AppCoordinator: NSObject, ObservableObject {
             if !isPreview { UserDefaults.standard.set(menuBarEnabled, forKey: "menuBarEnabled") }
         }
     }
+    @Published var dockIconEnabled: Bool {
+        didSet {
+            guard !isPreview else { return }
+            UserDefaults.standard.set(dockIconEnabled, forKey: "dockIconEnabled")
+            applyDockIconVisibility()
+        }
+    }
     @Published var menuCopyCompleted = 0
     @Published private(set) var trashRevision = 0
     private(set) var lastTrashedPromptID: UUID?
@@ -62,12 +69,14 @@ final class AppCoordinator: NSObject, ObservableObject {
         self.container = container
         if ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1" {
             self.menuBarEnabled = false
+            self.dockIconEnabled = false
         } else {
             let defaults = UserDefaults.standard
             if defaults.object(forKey: "menuBarEnabled") == nil {
                 defaults.set(true, forKey: "menuBarEnabled")
             }
             self.menuBarEnabled = defaults.bool(forKey: "menuBarEnabled")
+            self.dockIconEnabled = defaults.bool(forKey: "dockIconEnabled")
         }
         super.init()
         updaterObservation = updater.objectWillChange.sink { [weak self] in
@@ -78,11 +87,17 @@ final class AppCoordinator: NSObject, ObservableObject {
     func start() {
         guard !isPreview, !started else { return }
         started = true
+        applyDockIconVisibility()
         globalSearchController = GlobalSearchController(app: self)
         hotkeyManager = GlobalHotKeyManager { [weak self] in
             self?.globalSearchController?.toggle()
         }
         reloadGlobalHotkey()
+    }
+
+    func applyDockIconVisibility() {
+        guard !isPreview else { return }
+        NSApp.setActivationPolicy(dockIconEnabled ? .regular : .accessory)
     }
 
     func retainMainWindow(_ window: NSWindow) {
